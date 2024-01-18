@@ -27,10 +27,25 @@ class PrimusDataset(data.Dataset):
         data (list): A list of tuples containing the image file path and semantic file path for each sample in the dataset.
     """
 
-    def __init__(self, data_path, transform=None):
+    def __init__(self, data_path, vocabulary_path, transform=None):
         self.data_path = data_path
         self.transform = transform
+
+        # list of tuples containing image and label file paths
         self.data = []
+
+        # vocabulary
+        self.vocabulary_to_index = {}
+        self.index_to_vocabulary = {}
+
+        # read vocabulary
+        dict_file = open(vocabulary_path, 'r')
+        
+        for index, line in enumerate(dict_file.readlines()):
+            self.vocabulary_to_index[line.strip()] = index
+            self.index_to_vocabulary[index] = line.strip()
+        
+        dict_file.close()
 
         # iterate through each subdirectory (corresponding to a sample)
         for sample_dir in os.listdir(data_path):
