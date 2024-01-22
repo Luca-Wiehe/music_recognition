@@ -19,8 +19,25 @@ class MonophonicModel(nn.Module):
     def validation_step():
         pass
    
-    def set_optimizer():
-        pass
+    def set_optimizer(self):
+            """
+            Sets the optimizer for the neural network model according to hyperparameters
+            of the model.
+
+            Parameters:
+                None
+
+            Returns:
+                None
+            """
+            optim_hparams = self.hparams["optimizer"]
+
+            self.optimizer = torch.optim.Adam(
+                params=self.parameters(),
+                lr=optim_hparams["learning_rate"],
+                weight_decay=optim_hparams["weight_decay"]
+            )
+
 
     def save(self, path):
         """
