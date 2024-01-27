@@ -25,25 +25,28 @@ class MonophonicModel(nn.Module):
             nn.MaxPool2d(2)
         )
 
-        self.recurrent_block = nn.Sequential(
-            nn.LSTM(256, 256, bidirectional=True),
-            nn.LSTM(512, 256, bidirectional=True)
-        )
+        self.lstm1 = nn.LSTM(256, 256, bidirectional=True)
+        self.lstm2 = nn.LSTM(512, 256, bidirectional=True)
 
         self.output_block = nn.Sequential(
             nn.Linear(256*2, output_size + 1),  # times 2 because of bidirectional
             nn.LogSoftmax(dim=-1)
         )
 
-    def forward(self):
-        x = self.convolutional_block(x)
-        # Assuming the output of convolutional block is (batch_size, channels, height, width)
-        # We need to permute it to (width, batch_size, channels*height) because the input to LSTM should have the sequence length as the first dimension
-        batch_size = x.size(0)
-        x = x.permute(3, 0, 1, 2)
-        x = x.reshape(x.size(0), x.size(1), -1)  # Flatten the channels and height dimensions
+        # set optimizer
+        self.set_optimizer()
+
+    def forward(self, x):
+        # conv_block has output shape [batch_size, 256, H, W]
+        x = self.conv_block(x)
+        print(f"x.shape: {x.shape}")
+
+        # reshape to [batch_size, width, 256*height] for compatibility with recurrent_block
+        x = x.view(x.shape[0], x.shape[3], x.shape[1]*x.shape[2])
+        print(f"x.reshaped: {x.shape}")
         
-        x, _ = self.recurrent_block(x)
+        x, _ = self.lstm1(x)
+        x, _ = self.lstm2(x)
         
         # We take the output of the last time step
         x = x[-1]
@@ -53,7 +56,7 @@ class MonophonicModel(nn.Module):
 
     def training_step(self, batch, loss_func, device):
         
-        # training mode
+        # training model
         self.train()
         self.optimizer.zero_grad() # reset gradients
 
@@ -61,8 +64,9 @@ class MonophonicModel(nn.Module):
         inputs, targets = batch
         inputs, targets = inputs.to(device), targets.to(device)
 
+        print(f"\ninputs.shape: {inputs.shape}, targets.shape: {targets.shape}")
+
         pred = self.forward(inputs) # make predictions
-        targets = _to_one_hot(targets, self.num_classes).permute(0, 3, 1, 2).float()
 
         loss = loss_func(pred, targets) # compute loss
         loss.backward() # obtain weight updates
