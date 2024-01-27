@@ -52,12 +52,6 @@ class MonophonicModel(nn.Module):
         return x
 
     def training_step(self, batch, loss_func, device):
-        def _to_one_hot(y, num_classes):
-            scatter_dim = len(y.size())
-            y_tensor = y.view(*y.size(), -1).to(device)
-            zeros = torch.zeros(*y.size(), num_classes, dtype=y.dtype).to(device)
-
-            return zeros.scatter(scatter_dim, y_tensor, 1)
         
         # training mode
         self.train()
@@ -66,7 +60,6 @@ class MonophonicModel(nn.Module):
         # load data
         inputs, targets = batch
         inputs, targets = inputs.to(device), targets.to(device)
-        targets[targets == -1] = 1
 
         pred = self.forward(inputs) # make predictions
         targets = _to_one_hot(targets, self.num_classes).permute(0, 3, 1, 2).float()

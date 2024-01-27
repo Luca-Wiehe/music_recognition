@@ -2,6 +2,7 @@
 import os
 
 # torch imports
+import torch
 import torch.utils.data as data
 from torch.utils.data import random_split
 from torchvision import transforms
@@ -90,6 +91,7 @@ class PrimusDataset(data.Dataset):
         image = to_tensor(image)
         with open(labels_path, 'r') as file:
             labels = file.read()
+            labels = torch.tensor([self.vocabulary_to_index[label] for label in labels.split('\t') if label != ''])
 
         # apply transforms to image if specified
         if self.transform:
@@ -159,6 +161,6 @@ def visualize_sample(dataset):
         plt.axis('off')
         plt.show()
 
-        print(f"Labels: {dataset[0][1]}")
+        print(f"labels.shape: {dataset[0][1].shape}")
     else:
         print("[!] Cannot visualize sample. Dataset is empty.")
