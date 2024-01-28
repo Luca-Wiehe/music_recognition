@@ -42,9 +42,10 @@ class PrimusDataset(data.Dataset):
         # read vocabulary
         dict_file = open(vocabulary_path, 'r')
         
+        # leave 0 for padding
         for index, line in enumerate(dict_file.readlines()):
-            self.vocabulary_to_index[line.strip()] = index
-            self.index_to_vocabulary[index] = line.strip()
+            self.vocabulary_to_index[line.strip()] = index + 1
+            self.index_to_vocabulary[index + 1] = line.strip()
         
         dict_file.close()
 
