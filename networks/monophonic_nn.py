@@ -61,7 +61,7 @@ class MonophonicModel(nn.Module):
         print("[...] Training Step")
 
         def calculate_input_lengths(inputs):
-            return 
+            return
             
         def calculate_target_lengths(targets):
             """
@@ -73,7 +73,7 @@ class MonophonicModel(nn.Module):
             Returns:
             - target_lengths: tensor of shape (batch_size)
             """
-            target_lengths = torch.sum(targets != -1, dim=1)
+            target_lengths = torch.sum(targets != 0, dim=1)
             return target_lengths
         
         # training model
