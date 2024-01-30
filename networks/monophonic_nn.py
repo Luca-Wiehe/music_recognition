@@ -53,19 +53,6 @@ class MonophonicModel(nn.Module):
         return x
 
     def training_step(self, batch, loss_func, device):
-            
-        def calculate_target_lengths(targets):
-            """
-            Calculate the length of each target sequence in the batch.
-
-            Parameters:
-            - targets: tensor of shape (batch_size, width, 1)
-
-            Returns:
-            - target_lengths: tensor of shape (batch_size)
-            """
-            target_lengths = torch.sum(targets != 0, dim=1)
-            return target_lengths
         
         # training model
         self.train()
@@ -93,8 +80,33 @@ class MonophonicModel(nn.Module):
 
         return loss
 
-    def validation_step():
-        pass
+    def validation_step(self, batch, loss_func, device):
+        
+        # validation mode
+        self.eval()
+
+        with torch.no_grad():
+            # load data
+            inputs, targets = batch
+            inputs, targets = inputs.to(device), targets.to(device)
+
+            # predictions have shape (batch_size, width, pred_sequence)
+            preds = self.forward(inputs) # make predictions
+
+            # reshape to (width, batch_size, pred_sequence)
+            preds = preds.permute(1, 0, 2)
+
+            # input lenghts are width of predictions
+            input_lengths = torch.full((preds.shape[1],), preds.shape[0], dtype=torch.int32, device=device)
+
+            # target lengths are number of non-padding elements in target sequence
+            target_lengths = calculate_target_lengths(targets)
+
+            loss = loss_func(preds, targets, input_lengths, target_lengths) # compute loss
+
+        return loss
+
+
    
     def set_optimizer(self):
         """
@@ -109,7 +121,6 @@ class MonophonicModel(nn.Module):
             weight_decay=optim_hparams["weight_decay"]
         )
 
-
     def save(self, path):
         """
         Save model with its parameters to the given path. Conventionally the
@@ -120,3 +131,16 @@ class MonophonicModel(nn.Module):
         """
         print('Saving model... %s' % path)
         torch.save(self, path)
+
+def calculate_target_lengths(targets):
+    """
+    Calculate the length of each target sequence in the batch.
+
+    Parameters:
+    - targets: tensor of shape (batch_size, width, 1)
+
+    Returns:
+    - target_lengths: tensor of shape (batch_size)
+    """
+    target_lengths = torch.sum(targets != 0, dim=1)
+    return target_lengths
