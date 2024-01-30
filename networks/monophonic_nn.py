@@ -26,7 +26,7 @@ class MonophonicModel(nn.Module):
             nn.MaxPool2d(2)
         )
 
-        self.lstm1 = nn.LSTM(256, 256, bidirectional=True)
+        self.lstm1 = nn.LSTM(2306, 256, bidirectional=True)
         self.lstm2 = nn.LSTM(512, 256, bidirectional=True)
 
         self.output_block = nn.Sequential(
@@ -38,27 +38,21 @@ class MonophonicModel(nn.Module):
         self.set_optimizer()
 
     def forward(self, x):
-        print("\t[...] conv_block")
         # conv_block has output shape [batch_size, 256, H, W]
         x = self.conv_block(x)
 
-        print("\t[...] reshape")
         # reshape to [batch_size, width, 256*height] for compatibility with recurrent_block
         x = x.view(x.shape[0], x.shape[3], x.shape[1]*x.shape[2])
-        
-        print("\t[...] recurrent_block")
+
         x, _ = self.lstm1(x)
         x, _ = self.lstm2(x)
         
         # linear unit shape (batch_size, width, output_size + 1)
-        print("\t[...] output_block")
         x = self.output_block(x)
 
         return x
 
     def training_step(self, batch, loss_func, device):
-
-        print("[...] Training Step")
             
         def calculate_target_lengths(targets):
             """
@@ -77,13 +71,9 @@ class MonophonicModel(nn.Module):
         self.train()
         self.optimizer.zero_grad() # reset gradients
 
-        print("[...] Loading data")
-
         # load data
         inputs, targets = batch
         inputs, targets = inputs.to(device), targets.to(device)
-
-        print("[...] Making predictions")
 
         # predictions have shape (batch_size, width, pred_sequence)
         preds = self.forward(inputs) # make predictions
@@ -97,14 +87,9 @@ class MonophonicModel(nn.Module):
         # target lengths are number of non-padding elements in target sequence
         target_lengths = calculate_target_lengths(targets)
 
-        print("[...] Calculating loss")
         loss = loss_func(preds, targets, input_lengths, target_lengths) # compute loss
-        print(f"[...] Backpropagating with loss {loss}")
         loss.backward() # obtain weight updates
-        print("[...] Updating weights")
         self.optimizer.step() # update weights
-
-        print("\n[+] Training Step finished")
 
         return loss
 
