@@ -74,6 +74,7 @@ class PrimusDataset(data.Dataset):
     def __getitem__(self, index):
         """
         Retrieves the image and labels at the given index. Returns image as tensor and labels as string.
+        Resizes the image to a fixed height of 128 pixels while preserving the aspect ratio.
 
         Parameters:
             index (int): The index of the image and labels to retrieve.
@@ -81,20 +82,33 @@ class PrimusDataset(data.Dataset):
         Returns:
             tuple: A tuple containing the image and labels.
         """
-        # function to transform image to tensor
-        to_tensor = transforms.ToTensor()
-
-        # obtain path for image and label at given index
+        # Obtain path for image and label at given index
         image_path, labels_path = self.data[index]
 
-        # read image and label
+        # Read image
         image = Image.open(image_path).convert('L')
+
+        # Calculate new width to preserve aspect ratio
+        original_width, original_height = image.size
+        aspect_ratio = original_width / original_height
+        new_width = int(aspect_ratio * 128)  # Fixed height is 128
+
+        # Define the resize transformation
+        resize_transform = transforms.Resize((128, new_width))
+
+        # Apply the resize transformation
+        image = resize_transform(image)
+
+        # Convert image to tensor
+        to_tensor = transforms.ToTensor()
         image = to_tensor(image)
+
+        # Read and process labels
         with open(labels_path, 'r') as file:
             labels = file.read()
             labels = torch.tensor([self.vocabulary_to_index[label] for label in labels.split('\t') if label != ''])
 
-        # apply transforms to image if specified
+        # Apply additional transforms to image if specified
         if self.transform:
             image = self.transform(image)
 

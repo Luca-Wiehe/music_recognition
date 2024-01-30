@@ -26,7 +26,7 @@ class MonophonicModel(nn.Module):
             nn.MaxPool2d(2)
         )
 
-        self.lstm1 = nn.LSTM(2306, 256, bidirectional=True)
+        self.lstm1 = nn.LSTM(2048, 256, bidirectional=True)
         self.lstm2 = nn.LSTM(512, 256, bidirectional=True)
 
         self.output_block = nn.Sequential(
