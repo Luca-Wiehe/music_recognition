@@ -59,9 +59,6 @@ class MonophonicModel(nn.Module):
     def training_step(self, batch, loss_func, device):
 
         print("[...] Training Step")
-
-        def calculate_input_lengths(inputs):
-            return
             
         def calculate_target_lengths(targets):
             """
@@ -90,27 +87,24 @@ class MonophonicModel(nn.Module):
 
         # predictions have shape (batch_size, width, pred_sequence)
         preds = self.forward(inputs) # make predictions
-        print(f"\nPredictions shape: {preds.shape}")
 
         # reshape to (width, batch_size, pred_sequence)
         preds = preds.permute(1, 0, 2)
-        print(f"\nPredictions shape: {preds.shape}")
 
         # input lenghts are width of predictions
-        print("\nAbout to calculate input lengths")
-        input_lengths = calculate_input_lengths(inputs)
-        print(f"Input lengths calculated: {input_lengths}")
+        input_lengths = torch.full((preds.shape[1],), preds.shape[0], dtype=torch.int32, device=device)
 
-        print("\nAbout to calculate target lengths")
         # target lengths are number of non-padding elements in target sequence
         target_lengths = calculate_target_lengths(targets)
-        print(f"Target lengths calculated: {target_lengths}")
 
-        print("\nAbout to calculate loss")
+        print("[...] Calculating loss")
         loss = loss_func(preds, targets, input_lengths, target_lengths) # compute loss
-        print(f"Loss calculated: {loss.item()}")
+        print(f"[...] Backpropagating with loss {loss}")
         loss.backward() # obtain weight updates
+        print("[...] Updating weights")
         self.optimizer.step() # update weights
+
+        print("\n[+] Training Step finished")
 
         return loss
 
