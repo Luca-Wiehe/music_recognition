@@ -179,3 +179,60 @@ def visualize_sample(dataset):
         print(f"labels.shape: {dataset[0][1].shape}")
     else:
         print("[!] Cannot visualize sample. Dataset is empty.")
+
+def collate_fn(batch):
+    """
+    Collate function for batch processing in primus dataset. 
+    
+    Pads data and labels to be compatible with batch processing. Data is padded
+    to the maximum width while labels are padded to the longest sequence. While
+    padding for height is implemented, it is not used as the height of all images
+    in the dataset is 128 pixels.
+
+    Args:
+        batch (list): List of tuples containing data and labels.
+
+    Returns:
+        tuple: A tuple containing the padded data and labels.
+    """
+    # Separate data and labels
+    data, labels = zip(*batch)
+
+    # Find the maximum width and height in the batch
+    max_width = max([d.shape[2] for d in data])
+    max_height = max([d.shape[1] for d in data])
+
+    # Handling data (images)
+    padded_data = []
+    for d in data:
+        # Calculate padding size
+        padding_left = (max_width - d.shape[2]) // 2
+        padding_right = max_width - d.shape[2] - padding_left
+        padding_top = (max_height - d.shape[1]) // 2
+        padding_bottom = max_height - d.shape[1] - padding_top
+
+        # Apply padding
+        padded = torch.nn.functional.pad(d, (padding_left, padding_right, padding_top, padding_bottom), "constant", 0)
+        padded_data.append(padded)
+
+    # Stack all the padded images and labels into tensors
+    padded_data = torch.stack(padded_data)
+
+    # Handling labels
+    # Find the maximum label length
+    max_label_len = max([len(l) for l in labels])
+
+    # Pad labels
+    padded_labels = []
+    for l in labels:
+        # Padding length
+        padding_len = max_label_len - len(l)
+
+        # Pad and append
+        padded_label = torch.cat((l, torch.full((padding_len,), -1, dtype=torch.long))) # Using -1 as padding token
+        padded_labels.append(padded_label)
+
+    # Stack padded labels
+    labels = torch.stack(padded_labels)
+
+    return padded_data, labels

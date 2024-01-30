@@ -3,7 +3,9 @@ Neural Networks for predicting monophonic score sequences.
 """
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
+
+import data.primus_dataset as data
+import utils.utils as utils
 
 class MonophonicModel(nn.Module):
    
@@ -105,8 +107,6 @@ class MonophonicModel(nn.Module):
             loss = loss_func(preds, targets, input_lengths, target_lengths) # compute loss
 
         return loss
-
-
    
     def set_optimizer(self):
         """
@@ -144,3 +144,89 @@ def calculate_target_lengths(targets):
     """
     target_lengths = torch.sum(targets != 0, dim=1)
     return target_lengths
+
+def train_model(model, train_data, val_data, hparams, device, loss_func=torch.nn.CTCLoss(blank=0), epochs=20):
+
+      # obtain model optimizer
+      optimizer = model.optimizer
+
+      # decrease lr of optimizer when reaching a plateau
+      scheduler_hparams = hparams["scheduler"]
+      scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+                  optimizer=optimizer,
+                  mode=scheduler_hparams["mode"],
+                  patience=scheduler_hparams["plateau_patience"],
+                  factor=scheduler_hparams["plateau_decay"],
+                  threshold=scheduler_hparams["threshold"],
+                  threshold_mode=scheduler_hparams["threshold_mode"],
+                  cooldown=scheduler_hparams["cooldown"],
+                  eps=scheduler_hparams["eps"],
+      )
+
+      # select device for model
+      model = model.to(device)
+
+      # initialize early stopping criteria
+      stopping_hparams = hparams["early_stop"]
+      best_loss, best_model, best_optimizer = -1, None, None
+      patience, current_patience = stopping_hparams["patience"], stopping_hparams["patience"]
+
+      # run epochs
+      for epoch in range(epochs):
+
+          # training for each minibatch
+          train_loader = torch.utils.data.DataLoader(train_data, batch_size=hparams["batch_size"], shuffle=False, collate_fn=data.collate_fn)
+          train_loop = utils.create_tqdm_bar(train_loader, desc=f"Training Epoch [{epoch + 1}/{epochs}]")
+          train_loss, val_loss = 0, 0
+
+          for train_iteration, batch in train_loop:
+
+              # perform training step
+              loss = model.training_step(batch, loss_func, device)
+              train_loss += loss.item()
+
+              # Update the progress bar.
+              train_loop.set_postfix(curr_train_loss = "{:.8f}".format(
+                  train_loss / (train_iteration + 1)), val_loss = "{:.8f}".format(val_loss)
+              )
+
+          # validation for each minibatch
+          val_loader = torch.utils.data.DataLoader(val_data, batch_size=hparams["batch_size"], shuffle=False, collate_fn=data.collate_fn)
+          val_loop = utils.create_tqdm_bar(val_loader, f"Validation Epoch [{epoch + 1}/{epochs}]")
+          val_loss = 0
+
+          for val_iteration, batch in val_loop:
+
+              # perform validation step
+              loss = model.validation_step(batch, loss_func, device)
+              val_loss += loss.item()
+
+              # update the progress bar.
+              val_loop.set_postfix(val_loss = "{:.8f}".format(val_loss / (val_iteration + 1)))
+
+          # learning rate update for each epoch
+          pre_lr = optimizer.param_groups[0]["lr"]
+          scheduler.step(val_loss)
+          post_lr = optimizer.param_groups[0]['lr']
+          if post_lr < pre_lr:
+            print("Loading best model due to learning rate decrease.")
+            model = best_model.to(device)
+
+          # check for early stopping
+          if val_loss < best_loss or best_loss == -1:
+              current_patience = patience
+              best_loss = val_loss
+              best_model = model
+              best_optimizer = optimizer.state_dict()
+          else:
+              current_patience -= 1
+
+              if current_patience == 0:
+                  print(f"\n{'===' * 10}\nStopping early at epoch {epoch}\n{'===' * 10}")
+                  model.load_state_dict(best_model)
+                  optimizer.load_state_dict(best_optimizer)
+                  break
+
+          val_loss /= len(val_loader)
+
+      model = best_model.to(device)
