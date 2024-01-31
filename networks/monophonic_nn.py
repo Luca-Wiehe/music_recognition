@@ -6,6 +6,7 @@ import torch.nn as nn
 
 import data.primus_dataset as data
 import utils.utils as utils
+import copy
 
 class MonophonicModel(nn.Module):
    
@@ -223,9 +224,9 @@ def train_model(model, train_data, val_data, hparams, tb_logger, device, loss_fu
         if val_loss < best_loss or best_loss == -1:
             current_patience = patience
             best_loss = val_loss
-            best_model = model.state_dict()
-            best_optimizer = optimizer.state_dict()
-            best_scheduler = scheduler.state_dict()
+            best_model = copy.deepcopy(model.state_dict())
+            best_optimizer = copy.deepcopy(optimizer.state_dict())
+            best_scheduler = copy.deepcopy(scheduler.state_dict())
             print(f"Best performance achieved. Saving model!")
         else:
             current_patience -= 1
