@@ -79,7 +79,15 @@ class MonophonicModel(nn.Module):
 
         loss = loss_func(preds, targets, input_lengths, target_lengths) # compute loss
         loss.backward() # obtain weight updates
+
+        torch.nn.utils.clip_grad_norm_(self.parameters(), 1.0) # clip gradients
+
         self.optimizer.step() # update weights
+
+        if loss == None or torch.isnan(loss):
+            print(f"Loss: {loss.item()}\ntargets: {targets}\npreds: {torch.argmax(preds, dim=-1).squeeze(0)}")
+
+        # print(f"Loss: {loss.item()}\ntargets: {targets}\npreds: {torch.argmax(preds, dim=-1).squeeze(0)}")
 
         return loss
 
@@ -106,6 +114,10 @@ class MonophonicModel(nn.Module):
             target_lengths = calculate_target_lengths(targets)
 
             loss = loss_func(preds, targets, input_lengths, target_lengths) # compute loss
+
+            if loss == None or torch.isnan(loss):
+                print(f"targets.shape: {targets.shape}, preds.shape: {preds.shape}")
+                print(f"Loss: {loss.item()}\ntargets: {targets}\npreds: {torch.argmax(preds, dim=-1).squeeze(0)}")
 
         return loss
    
@@ -146,7 +158,7 @@ def calculate_target_lengths(targets):
     target_lengths = torch.sum(targets != 0, dim=1)
     return target_lengths
 
-def train_model(model, train_data, val_data, hparams, tb_logger, device, loss_func=torch.nn.CTCLoss(blank=0), epochs=20):
+def train_model(model, train_data, val_data, hparams, tb_logger, device, loss_func=torch.nn.CTCLoss(blank=0, zero_infinity=True), epochs=20):
 
     # obtain model optimizer
     optimizer = model.optimizer
@@ -186,7 +198,7 @@ def train_model(model, train_data, val_data, hparams, tb_logger, device, loss_fu
             loss = model.training_step(batch, loss_func, device)
             train_loss += loss.item()
 
-            # Update the progress bar.
+            # update progress bar
             train_loop.set_postfix(curr_train_loss = "{:.8f}".format(
                 train_loss / (train_iteration + 1)), val_loss = "{:.8f}".format(val_loss)
             )
@@ -205,7 +217,7 @@ def train_model(model, train_data, val_data, hparams, tb_logger, device, loss_fu
             loss = model.validation_step(batch, loss_func, device)
             val_loss += loss.item()
 
-            # update the progress bar.
+            # update progress bar
             val_loop.set_postfix(val_loss = "{:.8f}".format(val_loss / (val_iteration + 1)))
 
             # log validation loss to tensorboard
@@ -213,7 +225,7 @@ def train_model(model, train_data, val_data, hparams, tb_logger, device, loss_fu
 
         # learning rate update for each epoch
         pre_lr = optimizer.param_groups[0]["lr"]
-        scheduler.step(val_loss)
+        scheduler.step(train_loss)
         post_lr = optimizer.param_groups[0]['lr']
         if post_lr < pre_lr:
             print("Loading best model/scheduler due to learning rate decrease.")
@@ -221,13 +233,12 @@ def train_model(model, train_data, val_data, hparams, tb_logger, device, loss_fu
             scheduler.load_state_dict(best_scheduler)
 
         # check for early stopping
-        if val_loss < best_loss or best_loss == -1:
+        if train_loss < best_loss or best_loss == -1:
             current_patience = patience
-            best_loss = val_loss
+            best_loss = train_loss
             best_model = copy.deepcopy(model.state_dict())
             best_optimizer = copy.deepcopy(optimizer.state_dict())
             best_scheduler = copy.deepcopy(scheduler.state_dict())
-            print(f"Best performance achieved. Saving model!")
         else:
             current_patience -= 1
 

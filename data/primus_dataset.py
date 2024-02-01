@@ -229,7 +229,7 @@ def collate_fn(batch):
         padding_len = max_label_len - len(l)
 
         # Pad and append
-        padded_label = torch.cat((l, torch.full((padding_len,), -1, dtype=torch.long))) # Using -1 as padding token
+        padded_label = torch.cat((l, torch.full((padding_len,), 0, dtype=torch.long))) # Using 0 as padding token
         padded_labels.append(padded_label)
 
     # Stack padded labels
