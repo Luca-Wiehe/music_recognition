@@ -139,6 +139,8 @@ def split_data(dataset, ratio=(0.6, 0.2, 0.2)):
         test_data: Dataset for Testing
             (i.e. evaluating final performance)
     """
+    torch.manual_seed(42)
+
     # calculate sizes of dataset
     train_size, val_size = int(ratio[0] * len(dataset)), int(ratio[1] * len(dataset))
     test_size = len(dataset) - train_size - val_size

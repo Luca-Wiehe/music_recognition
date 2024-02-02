@@ -134,16 +134,6 @@ class MonophonicModel(nn.Module):
             weight_decay=optim_hparams["weight_decay"]
         )
 
-    def save(self, path):
-        """
-        Save model with its parameters to the given path. Conventionally the
-        path should end with "*.model".
-
-        Inputs:
-        - path: path string
-        """
-        print('Saving model... %s' % path)
-        torch.save(self, path)
 
 def calculate_target_lengths(targets):
     """
@@ -158,7 +148,7 @@ def calculate_target_lengths(targets):
     target_lengths = torch.sum(targets != 0, dim=1)
     return target_lengths
 
-def train_model(model, train_data, val_data, hparams, tb_logger, device, loss_func=torch.nn.CTCLoss(blank=0, zero_infinity=True), epochs=20):
+def train_model(model, train_data, val_data, hparams, tb_logger, device, loss_func=torch.nn.CTCLoss(blank=0), epochs=20, scheduler_state=None):
 
     # obtain model optimizer
     optimizer = model.optimizer
@@ -176,6 +166,9 @@ def train_model(model, train_data, val_data, hparams, tb_logger, device, loss_fu
         eps=scheduler_hparams["eps"],
     )
 
+    if scheduler_state:
+        scheduler.load_state_dict(scheduler_state)
+
     # select device for model
     model = model.to(device)
 
@@ -185,7 +178,16 @@ def train_model(model, train_data, val_data, hparams, tb_logger, device, loss_fu
     patience, current_patience = stopping_hparams["patience"], stopping_hparams["patience"]
 
     # run epochs
-    for epoch in range(epochs):
+    for i, epoch in enumerate(range(epochs)):
+
+        if i % 100 == 0 and i != 0:
+            print(f"\n[...] Saving model\n")
+            model_save_path = f"networks/checkpoints/monophonic_model.pt"
+            torch.save({
+                'model_state_dict': model.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'scheduler_state_dict': scheduler.state_dict(),
+            }, model_save_path)
 
         # training for each minibatch
         train_loader = torch.utils.data.DataLoader(train_data, batch_size=hparams["batch_size"], shuffle=False, collate_fn=data.collate_fn)
