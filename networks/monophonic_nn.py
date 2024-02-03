@@ -16,17 +16,24 @@ class MonophonicModel(nn.Module):
 
         self.conv_block = nn.Sequential(
             nn.Conv2d(1, 32, kernel_size=3, padding=1),
+            nn.BatchNorm2d(32),
             nn.ReLU(),
             nn.MaxPool2d(2),
+
             nn.Conv2d(32, 64, kernel_size=3, padding=1),
+            nn.BatchNorm2d(64),
             nn.ReLU(),
             nn.MaxPool2d(2),
+
             nn.Conv2d(64, 128, kernel_size=3, padding=1),
+            nn.BatchNorm2d(128),
             nn.ReLU(),
-            nn.MaxPool2d(2),
+            nn.MaxPool2d(kernel_size=(2, 1)),
+
             nn.Conv2d(128, 256, kernel_size=3, padding=1),
+            nn.BatchNorm2d(256),
             nn.ReLU(),
-            nn.MaxPool2d(2)
+            nn.MaxPool2d(kernel_size=(2, 1))
         )
 
         self.lstm1 = nn.LSTM(2048, 256, bidirectional=True)
@@ -190,7 +197,7 @@ def train_model(model, train_data, val_data, hparams, tb_logger, device, loss_fu
             }, model_save_path)
 
         # training for each minibatch
-        train_loader = torch.utils.data.DataLoader(train_data, batch_size=hparams["batch_size"], shuffle=False, collate_fn=data.collate_fn)
+        train_loader = torch.utils.data.DataLoader(train_data, batch_size=hparams["batch_size"], shuffle=True, collate_fn=data.collate_fn)
         train_loop = utils.create_tqdm_bar(train_loader, desc=f"Training Epoch [{epoch + 1}/{epochs}]")
         train_loss, val_loss = 0, 0
 
@@ -209,7 +216,7 @@ def train_model(model, train_data, val_data, hparams, tb_logger, device, loss_fu
             tb_logger.add_scalar(f'CRNN/train_loss', loss.item(), epoch * len(train_loader) + train_iteration)
 
         # validation for each minibatch
-        val_loader = torch.utils.data.DataLoader(val_data, batch_size=hparams["batch_size"], shuffle=False, collate_fn=data.collate_fn)
+        val_loader = torch.utils.data.DataLoader(val_data, batch_size=hparams["batch_size"], shuffle=True, collate_fn=data.collate_fn)
         val_loop = utils.create_tqdm_bar(val_loader, f"Validation Epoch [{epoch + 1}/{epochs}]")
         val_loss = 0
 
@@ -227,7 +234,7 @@ def train_model(model, train_data, val_data, hparams, tb_logger, device, loss_fu
 
         # learning rate update for each epoch
         pre_lr = optimizer.param_groups[0]["lr"]
-        scheduler.step(train_loss)
+        scheduler.step(val_loss)
         post_lr = optimizer.param_groups[0]['lr']
         if post_lr < pre_lr:
             print("Loading best model/scheduler due to learning rate decrease.")
@@ -235,9 +242,9 @@ def train_model(model, train_data, val_data, hparams, tb_logger, device, loss_fu
             scheduler.load_state_dict(best_scheduler)
 
         # check for early stopping
-        if train_loss < best_loss or best_loss == -1:
+        if val_loss < best_loss or best_loss == -1:
             current_patience = patience
-            best_loss = train_loss
+            best_loss = val_loss
             best_model = copy.deepcopy(model.state_dict())
             best_optimizer = copy.deepcopy(optimizer.state_dict())
             best_scheduler = copy.deepcopy(scheduler.state_dict())

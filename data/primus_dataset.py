@@ -103,6 +103,10 @@ class PrimusDataset(data.Dataset):
         to_tensor = transforms.ToTensor()
         image = to_tensor(image)
 
+        # Assuming mean = 0.5 and std = 0.5 for grayscale images
+        normalize = transforms.Normalize((0.5,), (0.5,))
+        image = normalize(image)
+
         # Read and process labels
         with open(labels_path, 'r') as file:
             labels = file.read()
