@@ -11,3 +11,13 @@ This repository is a PyTorch implementation of several optical music recognition
 ### Choice of Tech Stack
 
 ### Repository Structure
+
+## Implemented Networks
+### CRNN
+The first neural network that I implemented is a CRNN that I reimplemented from the Camera Primus Paper. It uses the a Convolutional Recurrent Neural Network (CRNN) architecture which is characterized by a set of convolutional layers followed by several BiLSTMs:
+
+| Layer | Dimension |
+| Input | (batch_size, 1, 128, width) |
+| --- | --- |
+| ConvLayer 1 | Filter Size: (3,3) |
+
