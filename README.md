@@ -11,6 +11,8 @@ This repository is a PyTorch implementation of several optical music recognition
 ### Choice of Tech Stack
 
 ### Repository Structure
+- `/data/`
+- `/networks/`
 
 ## Implemented Networks
 ### CRNN
