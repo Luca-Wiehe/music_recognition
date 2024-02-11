@@ -1,6 +1,6 @@
 # Optical Music Recognition
 
-This repository is a PyTorch implementation of several optical music recognition techniques. The goal is to take an image of a music score as input and produce a MIDI file as output. Currently, the main implemented architecture is a CRNN.
+This repository is a PyTorch implementation of several optical music recognition techniques. The goal is to take an image of a music score as input and produce a MIDI file as output. Currently, the main implemented architecture is a CRNN. A Transformer architecture will follow soon.
 
 ## Preview 
 
