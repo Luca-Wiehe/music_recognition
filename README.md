@@ -13,6 +13,7 @@ As a musician for many years, I often had to play according to musical notation 
 
 ### Repository Structure
 - `/data/`
+`/data/primus/`: The Primus Dataset
 - `/networks/`
 
 ## Implemented Networks
