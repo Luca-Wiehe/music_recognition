@@ -12,9 +12,10 @@ As a musician for many years, I often had to play according to musical notation 
 ### Choice of Tech Stack
 
 ### Repository Structure
-- `/data/`
-`/data/primus/`: The Primus Dataset
-- `/networks/`
+`/data/`: Contains datasets and scripts for data preprocessing
+- `/data/primus/`: The Camera Primus Dataset
+`/networks/`: Contains neural networks for OMR tasks
+- `monophonic_nn.py`: Neural networks for monophonic models, i.e. single instrument scores (no two-handed piano)
 
 ## Implemented Networks
 ### CRNN
