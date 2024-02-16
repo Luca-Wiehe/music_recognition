@@ -11,6 +11,16 @@ import copy
 class MonophonicModel(nn.Module):
    
     def __init__(self, hparams, output_size):
+        """
+        Initializes the Monophonic Model.
+
+        Parameters:
+            hparams (dict): Hyperparameters for the network.
+            output_size (int): Size of the output layer.
+
+        Returns:
+            None
+        """
         super().__init__()
         self.hparams = hparams
 
@@ -63,43 +73,63 @@ class MonophonicModel(nn.Module):
         return x
 
     def training_step(self, batch, loss_func, device):
-        
-        # training model
-        self.train()
-        self.optimizer.zero_grad() # reset gradients
+            """
+            Perform a single training step for the neural network model.
 
-        # load data
-        inputs, targets = batch
-        inputs, targets = inputs.to(device), targets.to(device)
+            Parameters:
+                batch (tuple): A tuple containing the input data and target labels.
+                loss_func (callable): The loss function used to compute the loss.
+                device (torch.device): The device on which the computation will be performed.
 
-        # predictions have shape (batch_size, width, pred_sequence)
-        preds = self.forward(inputs) # make predictions
+            Returns:
+                torch.Tensor: The computed loss value.
+            """
+            
+            # training model
+            self.train()
+            self.optimizer.zero_grad() # reset gradients
 
-        # reshape to (width, batch_size, pred_sequence)
-        preds = preds.permute(1, 0, 2)
+            # load data
+            inputs, targets = batch
+            inputs, targets = inputs.to(device), targets.to(device)
 
-        # input lenghts are width of predictions
-        input_lengths = torch.full((preds.shape[1],), preds.shape[0], dtype=torch.int32, device=device)
+            # predictions have shape (batch_size, width, pred_sequence)
+            preds = self.forward(inputs) # make predictions
 
-        # target lengths are number of non-padding elements in target sequence
-        target_lengths = calculate_target_lengths(targets)
+            # reshape to (width, batch_size, pred_sequence)
+            preds = preds.permute(1, 0, 2)
 
-        loss = loss_func(preds, targets, input_lengths, target_lengths) # compute loss
-        loss.backward() # obtain weight updates
+            # input lenghts are width of predictions
+            input_lengths = torch.full((preds.shape[1],), preds.shape[0], dtype=torch.int32, device=device)
 
-        torch.nn.utils.clip_grad_norm_(self.parameters(), 1.0) # clip gradients
+            # target lengths are number of non-padding elements in target sequence
+            target_lengths = calculate_target_lengths(targets)
 
-        self.optimizer.step() # update weights
+            loss = loss_func(preds, targets, input_lengths, target_lengths) # compute loss
+            loss.backward() # obtain weight updates
 
-        if loss == None or torch.isnan(loss):
-            print(f"Loss: {loss.item()}\ntargets: {targets}\npreds: {torch.argmax(preds, dim=-1).squeeze(0)}")
+            torch.nn.utils.clip_grad_norm_(self.parameters(), 1.0) # clip gradients
 
-        # print(f"Loss: {loss.item()}\ntargets: {targets}\npreds: {torch.argmax(preds, dim=-1).squeeze(0)}")
+            self.optimizer.step() # update weights
 
-        return loss
+            if loss == None or torch.isnan(loss):
+                print(f"Loss: {loss.item()}\ntargets: {targets}\npreds: {torch.argmax(preds, dim=-1).squeeze(0)}")
+
+            return loss
 
     def validation_step(self, batch, loss_func, device):
-        
+        """
+        Perform a validation step on a batch of data.
+
+        Parameters:
+            batch (tuple): A tuple containing inputs and targets.
+            loss_func (torch.nn.Module): The loss function to compute the loss.
+            device (torch.device): The device to perform the computation on.
+
+        Returns:
+            torch.Tensor: The computed loss.
+
+        """
         # validation mode
         self.eval()
 
@@ -156,7 +186,20 @@ def calculate_target_lengths(targets):
     return target_lengths
 
 def train_model(model, train_data, val_data, hparams, tb_logger, device, loss_func=torch.nn.CTCLoss(blank=0), epochs=20, scheduler_state=None):
+    """
+    Trains a model using the given training and validation data.
 
+    Parameters:
+        model (torch.nn.Module): The model to be trained.
+        train_data (torch.utils.data.Dataset): The training data.
+        val_data (torch.utils.data.Dataset): The validation data.
+        hparams (dict): Hyperparameters for training.
+        tb_logger (tensorboardX.SummaryWriter): Tensorboard logger for logging training progress.
+        device (torch.device): The device to be used for training.
+        loss_func (torch.nn.Module, optional): The loss function to be used. Defaults to torch.nn.CTCLoss(blank=0).
+        epochs (int, optional): The number of epochs to train for. Defaults to 20.
+        scheduler_state (dict, optional): The state of the learning rate scheduler. Defaults to None.
+    """
     # obtain model optimizer
     optimizer = model.optimizer
 
