@@ -24,4 +24,4 @@ The first implemented neural network is a CRNN that I reimplemented from the Cam
 The implementation of this stage is almost completed. However, the training in the original paper had 64,000 epochs which is infeasible in terms of available compute power at this point.
 
 ### TrOMR
-The second architecture is a transformer architecture reimplemented from the TrOMR Paper. 
+The second architecture is a transformer architecture reimplemented from the TrOMR Paper. It uses Transfer Learning with a pretrained Vision Transformer to predict sequences of music symbols.
