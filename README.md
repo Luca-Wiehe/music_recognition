@@ -10,6 +10,7 @@ This repository is a PyTorch implementation of several optical music recognition
 As a musician for many years, I often had to play according to musical notation - without having an idea what the notation may sound like. Converting music scores to a playable sound representation. This project is an endeavour to automate this process to make the learning process more enjoyable.
 
 ### Choice of Tech Stack
+I selected PyTorch for this project due to its dynamic computation graph for flexible model adaptation, comprehensive ecosystem for accelerated development, and robust GPU support for efficient training and inference, making it optimal for advanced deep learning needs. Additionally, Pytorch has a lightweight integration for iOS mobile devices which may be beneficial when deploying the project in the future. 
 
 ### Repository Structure
 `/data/`: Contains datasets and scripts for data preprocessing
