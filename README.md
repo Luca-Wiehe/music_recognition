@@ -15,8 +15,9 @@ I selected PyTorch for this project due to its dynamic computation graph for fle
 ### Repository Structure
 `/data/`: Contains datasets and scripts for data preprocessing
 - `/data/primus/`: The Camera Primus Dataset
-`/networks/`: Contains neural networks for OMR tasks
 - `/data/monophonic_nn.py`: Neural networks for monophonic models, i.e. single instrument scores (no two-handed piano)
+
+`/networks/`: Contains neural networks for OMR tasks
 
 ## Implemented Networks
 ### CRNN
