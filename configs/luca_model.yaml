@@ -1,0 +1,75 @@
+# Configuration for Music-TrOCR model training
+# Usage: python train.py --config configs/luca_model.yaml
+
+# Model configuration
+model:
+  type: "MusicTrOCR"
+  params:
+    # Vision encoder backbone (HuggingFace model name)
+    # Options: microsoft/convnext-tiny-224 (~28M params)
+    #          microsoft/convnext-small-224 (~50M params)  
+    #          google/vit-base-patch16-224 (~86M params)
+    #          facebook/deit-base-patch16-224 (~86M params)
+    vision_model_name: "microsoft/convnext-tiny-224"
+    
+    # Transformer decoder parameters
+    d_model: 512              # Hidden dimension
+    n_heads: 8               # Number of attention heads
+    n_decoder_layers: 6      # Number of decoder layers
+    d_ff: 2048              # Feed-forward dimension
+    max_seq_len: 512        # Maximum sequence length
+    dropout: 0.1            # Dropout rate
+
+# Data configuration
+data:
+  dataset_path: "data/primus/primusCalvoRizoAppliedSciences2018/package_aa"
+  vocabulary_path: "data/semantic_labels.txt"
+  split_ratio: [0.6, 0.2, 0.2]  # train, val, test
+  num_workers: 4
+  pin_memory: true
+
+# Training configuration
+training:
+  batch_size: 16
+  epochs: 200
+  
+  # Optimizer settings
+  optimizer:
+    type: "Adam"
+    learning_rate: 1e-4
+    weight_decay: 1e-5
+    betas: [0.9, 0.999]
+  
+  # Learning rate scheduler
+  scheduler:
+    type: "ReduceLROnPlateau"
+    mode: "min"
+    factor: 0.5
+    patience: 5
+    threshold: 1e-4
+    threshold_mode: "rel"
+    cooldown: 2
+    eps: 1e-8
+  
+  # Early stopping
+  early_stop_patience: 15
+  
+  # Gradient clipping
+  grad_clip_norm: 1.0
+  
+  # Checkpointing
+  checkpoint_dir: "checkpoints/luca_model"
+
+# Logging configuration
+logging:
+  use_wandb: true
+  wandb:
+    project: "music-recognition"
+    run_name: "music-trocr-convnext-tiny"
+    tags: ["music-trocr", "convnext", "transformer", "omr"]
+    notes: "Music-TrOCR with ConvNeXt-Tiny backbone and transformer decoder"
+
+# Hardware configuration
+hardware:
+  device: "auto"  # auto, cpu, cuda
+  mixed_precision: false  # Use automatic mixed precision (AMP)

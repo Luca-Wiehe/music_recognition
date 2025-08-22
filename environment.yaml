@@ -12,3 +12,5 @@ dependencies:
     - prettytable
     - matplotlib
     - transformers
+    - wandb
+    - pyyaml

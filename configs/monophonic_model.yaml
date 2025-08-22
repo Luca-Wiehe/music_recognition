@@ -1,0 +1,78 @@
+# Configuration for Monophonic CRNN model training  
+# Usage: python train.py --config configs/monophonic_model.yaml
+
+# Model configuration
+model:
+  type: "MonophonicModel"
+  params: {}  # MonophonicModel uses hparams from config root
+
+# Data configuration
+data:
+  dataset_path: "data/primus/primusCalvoRizoAppliedSciences2018/package_aa"
+  vocabulary_path: "data/semantic_labels.txt"
+  split_ratio: [0.6, 0.2, 0.2]  # train, val, test
+  num_workers: 2
+  pin_memory: true
+
+# Training configuration
+training:
+  batch_size: 32
+  epochs: 200
+  
+  # Optimizer settings
+  optimizer:
+    type: "Adam"
+    learning_rate: 1e-3
+    weight_decay: 1e-4
+  
+  # Learning rate scheduler
+  scheduler:
+    type: "ReduceLROnPlateau"
+    mode: "min"
+    factor: 0.5
+    patience: 5
+    threshold: 1e-4
+    threshold_mode: "rel"
+    cooldown: 2
+    eps: 1e-8
+  
+  # Early stopping
+  early_stop_patience: 10
+  
+  # Gradient clipping
+  grad_clip_norm: 1.0
+  
+  # Checkpointing
+  checkpoint_dir: "checkpoints/monophonic_model"
+
+# Legacy MonophonicModel hyperparameters (for backward compatibility)
+batch_size: 32
+optimizer:
+  learning_rate: 1e-3
+  weight_decay: 1e-4
+
+scheduler:
+  mode: "min"
+  plateau_patience: 5
+  plateau_decay: 0.5
+  threshold: 1e-4
+  threshold_mode: "rel"
+  cooldown: 2
+  eps: 1e-8
+
+early_stop:
+  patience: 10
+
+# Logging configuration
+logging:
+  use_wandb: true
+  wandb:
+    project: "music-recognition"
+    run_name: "monophonic-crnn-baseline"
+    tags: ["monophonic", "crnn", "baseline", "omr"]
+    notes: "Baseline CRNN model with CTC loss for comparison"
+
+# Hardware configuration
+hardware:
+  device: "auto"  # auto, cpu, cuda
+  mixed_precision: false
