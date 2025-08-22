@@ -1,3 +1,5 @@
 # ignore dataset
 /data/primus/
 /logs/
+/networks/checkpoints/*
+!/networks/checkpoints/.gitkeep

@@ -185,7 +185,7 @@ def calculate_target_lengths(targets):
     target_lengths = torch.sum(targets != 0, dim=1)
     return target_lengths
 
-def train_model(model, train_data, val_data, hparams, tb_logger, device, loss_func=torch.nn.CTCLoss(blank=0), epochs=20, scheduler_state=None):
+def train_model(model, train_data, val_data, hparams, device, loss_func=torch.nn.CTCLoss(blank=0), epochs=20, scheduler_state=None):
     """
     Trains a model using the given training and validation data.
 
@@ -194,7 +194,6 @@ def train_model(model, train_data, val_data, hparams, tb_logger, device, loss_fu
         train_data (torch.utils.data.Dataset): The training data.
         val_data (torch.utils.data.Dataset): The validation data.
         hparams (dict): Hyperparameters for training.
-        tb_logger (tensorboardX.SummaryWriter): Tensorboard logger for logging training progress.
         device (torch.device): The device to be used for training.
         loss_func (torch.nn.Module, optional): The loss function to be used. Defaults to torch.nn.CTCLoss(blank=0).
         epochs (int, optional): The number of epochs to train for. Defaults to 20.
@@ -255,9 +254,6 @@ def train_model(model, train_data, val_data, hparams, tb_logger, device, loss_fu
                 train_loss / (train_iteration + 1)), val_loss = "{:.8f}".format(val_loss)
             )
 
-            # log training loss to tensorboard
-            tb_logger.add_scalar(f'CRNN/train_loss', loss.item(), epoch * len(train_loader) + train_iteration)
-
         # validation for each minibatch
         val_loader = torch.utils.data.DataLoader(val_data, batch_size=hparams["batch_size"], shuffle=True, collate_fn=data.collate_fn)
         val_loop = utils.create_tqdm_bar(val_loader, f"Validation Epoch [{epoch + 1}/{epochs}]")
@@ -271,9 +267,6 @@ def train_model(model, train_data, val_data, hparams, tb_logger, device, loss_fu
 
             # update progress bar
             val_loop.set_postfix(val_loss = "{:.8f}".format(val_loss / (val_iteration + 1)))
-
-            # log validation loss to tensorboard
-            tb_logger.add_scalar(f'CRNN/val_loss', loss.item(), epoch * len(val_loader) + val_iteration)
 
         # learning rate update for each epoch
         pre_lr = optimizer.param_groups[0]["lr"]

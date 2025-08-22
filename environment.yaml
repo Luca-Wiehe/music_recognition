@@ -1,0 +1,14 @@
+name: music_recognition
+channels:
+  - defaults
+  - conda-forge
+dependencies:
+  - python=3.10
+  - pip
+  - pip:
+    - torch
+    - torchvision
+    - ipykernel
+    - prettytable
+    - matplotlib
+    - transformers

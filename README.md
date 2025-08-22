@@ -12,6 +12,11 @@ As a musician for many years, I often had to play according to musical notation 
 ### Choice of Tech Stack
 I selected PyTorch for this project due to its dynamic computation graph for flexible model adaptation, comprehensive ecosystem for accelerated development, and robust GPU support for efficient training and inference, making it optimal for advanced deep learning needs. Additionally, Pytorch has a lightweight integration for iOS mobile devices which may be beneficial when deploying the project in the future. 
 
+### Setup
+```
+pip install torch torchvision ipykernel prettykernel matplotlib
+```
+
 ### Dataset
 ```
 cd data/primus
