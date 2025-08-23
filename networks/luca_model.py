@@ -356,43 +356,86 @@ class MusicTrOCR(nn.Module):
     def encode_image(self, images: torch.Tensor) -> torch.Tensor:
         """Encode images to feature representations"""
         return self.vision_encoder(images)
+    
+    def decode_model_tokens_to_dataset(self, model_tokens: torch.Tensor) -> torch.Tensor:
+        """
+        Convert model vocabulary tokens back to dataset vocabulary tokens.
+        
+        Args:
+            model_tokens: Tensor with model vocabulary indices
+            
+        Returns:
+            Dataset vocabulary indices (with special tokens removed)
+        """
+        # Convert model tokens back to dataset tokens
+        # Model tokens 0,1,2 (PAD,START,END) -> special handling
+        # Model tokens 3,4,5,... -> dataset tokens 1,2,3,...
+        dataset_tokens = torch.where(
+            model_tokens < self.FIRST_MUSIC_TOKEN_ID,
+            model_tokens,  # Keep special tokens as-is for debugging
+            model_tokens - (self.FIRST_MUSIC_TOKEN_ID - 1)  # Shift music tokens back by -2
+        )
+        return dataset_tokens
         
     def prepare_targets(self, targets: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Prepare target sequences for training with teacher forcing.
         
         Args:
-            targets: Original target token indices (B, seq_len) with 0 as padding
+            targets: Original target token indices from dataset (B, seq_len)
+                    - 0: padding token
+                    - 1, 2, 3, ...: music vocabulary tokens (from semantic_labels.txt)
+                    
         Returns:
             decoder_input: Input to decoder (B, seq_len+1) starting with START token
             decoder_target: Target for loss computation (B, seq_len+1) ending with END token
+                    
+        Vocabulary mapping:
+            Dataset -> Model
+            0 (padding) -> 0 (PAD_TOKEN_ID)
+            1, 2, 3, ... (music tokens) -> 3, 4, 5, ... (shifted by +2)
         """
         batch_size, seq_len = targets.shape
         device = targets.device
         
-        # Shift original token indices to account for special tokens
-        # Original tokens: [1, 2, 3, ...] -> [4, 5, 6, ...] (shift by FIRST_MUSIC_TOKEN_ID-1)
-        targets_shifted = torch.where(targets == 0, 0, targets + self.FIRST_MUSIC_TOKEN_ID - 1)
+        # Shift dataset vocabulary to model vocabulary space
+        # Dataset tokens 1,2,3,... become model tokens 3,4,5,...
+        # Padding (0) remains padding (0)
+        targets_shifted = torch.where(targets == 0, 
+                                    self.PAD_TOKEN_ID,  # Keep padding as PAD_TOKEN_ID (0)
+                                    targets + (self.FIRST_MUSIC_TOKEN_ID - 1))  # Shift music tokens by +2
         
-        # Create decoder input: [START] + targets (without last token if not padding)
+        # Create decoder input: [START] + targets_shifted
         start_tokens = torch.full((batch_size, 1), self.START_TOKEN_ID, device=device)
         decoder_input = torch.cat([start_tokens, targets_shifted], dim=1)
         
-        # Create decoder target: targets + [END] (replace padding with END tokens appropriately)
+        # Create decoder target: targets_shifted + [END]
         end_tokens = torch.full((batch_size, 1), self.END_TOKEN_ID, device=device)
         decoder_target = torch.cat([targets_shifted, end_tokens], dim=1)
         
-        # Find the first padding position in each sequence and place END token there
+        # For each sequence, find where the actual sequence ends and place END token there
         for i in range(batch_size):
-            # Find first padding token in original targets
+            # Find first padding position in original targets (this is where sequence ends)
             padding_positions = (targets[i] == 0).nonzero(as_tuple=True)[0]
             if len(padding_positions) > 0:
-                first_pad_pos = padding_positions[0].item()
-                # Place END token at the first padding position in decoder_target
-                decoder_target[i, first_pad_pos] = self.END_TOKEN_ID
-                # Set everything after END token to PAD in both sequences
-                decoder_target[i, first_pad_pos+1:] = self.PAD_TOKEN_ID
-                decoder_input[i, first_pad_pos+1:] = self.PAD_TOKEN_ID
+                # Sequence ends at first padding position
+                seq_end_pos = padding_positions[0].item()
+                # Place END token at the end of the actual sequence in decoder_target
+                decoder_target[i, seq_end_pos] = self.END_TOKEN_ID
+                # Everything after END token should be PAD in both sequences
+                decoder_target[i, seq_end_pos+1:] = self.PAD_TOKEN_ID
+                decoder_input[i, seq_end_pos+1:] = self.PAD_TOKEN_ID
+            else:
+                # No padding found, sequence uses full length
+                # END token is already at the end, no changes needed
+                pass
+        
+        # Debug print for first batch to verify mappings (uncomment for debugging)
+        # if torch.rand(1).item() < 0.1:  # Print 10% of batches
+        #     print(f"[DEBUG VOCAB] Original targets[0][:10]: {targets[0][:10].tolist()}")
+        #     print(f"[DEBUG VOCAB] Shifted targets[0][:10]: {targets_shifted[0][:10].tolist()}")
+        #     print(f"[DEBUG VOCAB] Decoder input[0][:11]: {decoder_input[0][:11].tolist()}")
+        #     print(f"[DEBUG VOCAB] Decoder target[0][:11]: {decoder_target[0][:11].tolist()}")
                 
         return decoder_input, decoder_target
     
@@ -487,13 +530,15 @@ class MusicTrOCR(nn.Module):
                 
         return sequences
         
-    def training_step(self, batch, device):
+    def training_step(self, batch, device, optimizer, config=None):
         """
         Perform a single training step.
         
         Args:
             batch: Tuple of (images, targets) from dataloader
             device: Device to run computation on
+            optimizer: Optimizer instance
+            config: Training configuration dict
             
         Returns:
             Loss tensor
@@ -502,6 +547,9 @@ class MusicTrOCR(nn.Module):
         
         images, targets = batch
         images, targets = images.to(device), targets.to(device)
+        
+        # Zero gradients
+        optimizer.zero_grad()
         
         # Forward pass
         outputs = self.forward(images, targets)
@@ -516,6 +564,16 @@ class MusicTrOCR(nn.Module):
         
         # Compute loss (ignore padding tokens)
         loss = F.cross_entropy(logits_flat, targets_flat, ignore_index=self.PAD_TOKEN_ID)
+        
+        # Backward pass
+        loss.backward()
+        
+        # Gradient clipping
+        if config and config.get('training', {}).get('grad_clip_norm'):
+            torch.nn.utils.clip_grad_norm_(self.parameters(), config['training']['grad_clip_norm'])
+        
+        # Optimizer step
+        optimizer.step()
         
         return loss
         

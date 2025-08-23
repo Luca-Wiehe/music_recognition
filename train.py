@@ -256,7 +256,7 @@ def train_epoch(model: torch.nn.Module,
         # Forward pass and compute loss
         if hasattr(model, 'training_step'):
             # For models with custom training_step (like MusicTrOCR)
-            loss = model.training_step(batch, device)
+            loss = model.training_step(batch, device, optimizer, config)
         else:
             # For models using standard training loop (like MonophonicModel) 
             # This would need to be implemented based on the specific model
