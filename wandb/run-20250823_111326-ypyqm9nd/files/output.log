@@ -1,0 +1,182 @@
+
+=== Epoch 1/200 ===
+Training Epoch 1: 100%|█████████████████████████████████████████████████████████████████████| 1/1 [00:00<00:00,  1.10it/s, loss=7.743976, lr=1.00e-04]
+Input image shape: torch.Size([6, 1, 128, 1871])
+Raw backbone features shape: torch.Size([6, 768, 4, 58])
+Final encoder output shape: torch.Size([6, 232, 512])
+Validation Epoch 1: 100%|████████████████████████████████████████████████████████████████████████████| 1/1 [00:00<00:00,  4.90it/s, val_loss=7.688283]
+Input image shape: torch.Size([2, 1, 128, 937])
+Raw backbone features shape: torch.Size([2, 768, 4, 29])
+Final encoder output shape: torch.Size([2, 116, 512])
+Train Loss: 7.743976, Val Loss: 7.688283
+New best validation loss: 7.688283
+Saved best checkpoint at epoch 0
+
+=== Epoch 2/200 ===
+Training Epoch 2: 100%|█████████████████████████████████████████████████████████████████████| 1/1 [00:00<00:00,  1.87it/s, loss=7.745226, lr=1.00e-04]
+Input image shape: torch.Size([6, 1, 128, 1871])
+Raw backbone features shape: torch.Size([6, 768, 4, 58])
+Final encoder output shape: torch.Size([6, 232, 512])
+Validation Epoch 2: 100%|████████████████████████████████████████████████████████████████████████████| 1/1 [00:00<00:00, 12.10it/s, val_loss=7.688283]
+Input image shape: torch.Size([2, 1, 128, 937])
+Raw backbone features shape: torch.Size([2, 768, 4, 29])
+Final encoder output shape: torch.Size([2, 116, 512])
+Train Loss: 7.745226, Val Loss: 7.688283
+
+=== Epoch 3/200 ===
+Training Epoch 3: 100%|█████████████████████████████████████████████████████████████████████| 1/1 [00:00<00:00,  5.45it/s, loss=7.795206, lr=1.00e-04]
+Input image shape: torch.Size([6, 1, 128, 1871])
+Raw backbone features shape: torch.Size([6, 768, 4, 58])
+Final encoder output shape: torch.Size([6, 232, 512])
+Validation Epoch 3: 100%|████████████████████████████████████████████████████████████████████████████| 1/1 [00:00<00:00, 13.80it/s, val_loss=7.688283]
+Input image shape: torch.Size([2, 1, 128, 937])
+Raw backbone features shape: torch.Size([2, 768, 4, 29])
+Final encoder output shape: torch.Size([2, 116, 512])
+Train Loss: 7.795206, Val Loss: 7.688283
+
+=== Epoch 4/200 ===
+Training Epoch 4: 100%|█████████████████████████████████████████████████████████████████████| 1/1 [00:00<00:00,  5.02it/s, loss=7.748048, lr=1.00e-04]
+Input image shape: torch.Size([6, 1, 128, 1871])
+Raw backbone features shape: torch.Size([6, 768, 4, 58])
+Final encoder output shape: torch.Size([6, 232, 512])
+Validation Epoch 4: 100%|████████████████████████████████████████████████████████████████████████████| 1/1 [00:00<00:00, 11.92it/s, val_loss=7.688283]
+Input image shape: torch.Size([2, 1, 128, 937])
+Raw backbone features shape: torch.Size([2, 768, 4, 29])
+Final encoder output shape: torch.Size([2, 116, 512])
+Train Loss: 7.748048, Val Loss: 7.688283
+
+=== Epoch 5/200 ===
+Training Epoch 5: 100%|█████████████████████████████████████████████████████████████████████| 1/1 [00:00<00:00,  5.45it/s, loss=7.746030, lr=1.00e-04]
+Input image shape: torch.Size([6, 1, 128, 1871])
+Raw backbone features shape: torch.Size([6, 768, 4, 58])
+Final encoder output shape: torch.Size([6, 232, 512])
+Validation Epoch 5: 100%|████████████████████████████████████████████████████████████████████████████| 1/1 [00:00<00:00, 12.56it/s, val_loss=7.688283]
+Input image shape: torch.Size([2, 1, 128, 937])
+Raw backbone features shape: torch.Size([2, 768, 4, 29])
+Final encoder output shape: torch.Size([2, 116, 512])
+Train Loss: 7.746030, Val Loss: 7.688283
+
+=== Epoch 6/200 ===
+Training Epoch 6: 100%|█████████████████████████████████████████████████████████████████████| 1/1 [00:00<00:00,  5.39it/s, loss=7.799826, lr=1.00e-04]
+Input image shape: torch.Size([6, 1, 128, 1871])
+Raw backbone features shape: torch.Size([6, 768, 4, 58])
+Final encoder output shape: torch.Size([6, 232, 512])
+Validation Epoch 6: 100%|████████████████████████████████████████████████████████████████████████████| 1/1 [00:00<00:00, 13.25it/s, val_loss=7.688283]
+Input image shape: torch.Size([2, 1, 128, 937])
+Raw backbone features shape: torch.Size([2, 768, 4, 29])
+Final encoder output shape: torch.Size([2, 116, 512])
+Train Loss: 7.799826, Val Loss: 7.688283
+
+=== Epoch 7/200 ===
+Training Epoch 7: 100%|█████████████████████████████████████████████████████████████████████| 1/1 [00:00<00:00,  5.10it/s, loss=7.742854, lr=1.00e-04]
+Input image shape: torch.Size([6, 1, 128, 1871])
+Raw backbone features shape: torch.Size([6, 768, 4, 58])
+Final encoder output shape: torch.Size([6, 232, 512])
+Validation Epoch 7: 100%|████████████████████████████████████████████████████████████████████████████| 1/1 [00:00<00:00, 12.36it/s, val_loss=7.688283]
+Input image shape: torch.Size([2, 1, 128, 937])
+Raw backbone features shape: torch.Size([2, 768, 4, 29])
+Final encoder output shape: torch.Size([2, 116, 512])
+Train Loss: 7.742854, Val Loss: 7.688283
+
+=== Epoch 8/200 ===
+Training Epoch 8: 100%|█████████████████████████████████████████████████████████████████████| 1/1 [00:00<00:00,  5.41it/s, loss=7.777633, lr=5.00e-05]
+Input image shape: torch.Size([6, 1, 128, 1871])
+Raw backbone features shape: torch.Size([6, 768, 4, 58])
+Final encoder output shape: torch.Size([6, 232, 512])
+Validation Epoch 8: 100%|████████████████████████████████████████████████████████████████████████████| 1/1 [00:00<00:00, 13.20it/s, val_loss=7.688283]
+Input image shape: torch.Size([2, 1, 128, 937])
+Raw backbone features shape: torch.Size([2, 768, 4, 29])
+Final encoder output shape: torch.Size([2, 116, 512])
+Train Loss: 7.777633, Val Loss: 7.688283
+
+=== Epoch 9/200 ===
+Training Epoch 9: 100%|█████████████████████████████████████████████████████████████████████| 1/1 [00:00<00:00,  5.51it/s, loss=7.745794, lr=5.00e-05]
+Input image shape: torch.Size([6, 1, 128, 1871])
+Raw backbone features shape: torch.Size([6, 768, 4, 58])
+Final encoder output shape: torch.Size([6, 232, 512])
+Validation Epoch 9: 100%|████████████████████████████████████████████████████████████████████████████| 1/1 [00:00<00:00, 12.97it/s, val_loss=7.688283]
+Input image shape: torch.Size([2, 1, 128, 937])
+Raw backbone features shape: torch.Size([2, 768, 4, 29])
+Final encoder output shape: torch.Size([2, 116, 512])
+Train Loss: 7.745794, Val Loss: 7.688283
+
+=== Epoch 10/200 ===
+Training Epoch 10: 100%|████████████████████████████████████████████████████████████████████| 1/1 [00:00<00:00,  5.38it/s, loss=7.734142, lr=5.00e-05]
+Input image shape: torch.Size([6, 1, 128, 1871])
+Raw backbone features shape: torch.Size([6, 768, 4, 58])
+Final encoder output shape: torch.Size([6, 232, 512])
+Validation Epoch 10: 100%|███████████████████████████████████████████████████████████████████████████| 1/1 [00:00<00:00, 12.07it/s, val_loss=7.688283]
+Input image shape: torch.Size([2, 1, 128, 937])
+Raw backbone features shape: torch.Size([2, 768, 4, 29])
+Final encoder output shape: torch.Size([2, 116, 512])
+Train Loss: 7.734142, Val Loss: 7.688283
+
+=== Epoch 11/200 ===
+Training Epoch 11: 100%|████████████████████████████████████████████████████████████████████| 1/1 [00:00<00:00,  5.40it/s, loss=7.772763, lr=5.00e-05]
+Input image shape: torch.Size([6, 1, 128, 1871])
+Raw backbone features shape: torch.Size([6, 768, 4, 58])
+Final encoder output shape: torch.Size([6, 232, 512])
+Validation Epoch 11: 100%|███████████████████████████████████████████████████████████████████████████| 1/1 [00:00<00:00, 12.97it/s, val_loss=7.688283]
+Input image shape: torch.Size([2, 1, 128, 937])
+Raw backbone features shape: torch.Size([2, 768, 4, 29])
+Final encoder output shape: torch.Size([2, 116, 512])
+Train Loss: 7.772763, Val Loss: 7.688283
+
+=== Epoch 12/200 ===
+Training Epoch 12: 100%|████████████████████████████████████████████████████████████████████| 1/1 [00:00<00:00,  5.38it/s, loss=7.744655, lr=5.00e-05]
+Input image shape: torch.Size([6, 1, 128, 1871])
+Raw backbone features shape: torch.Size([6, 768, 4, 58])
+Final encoder output shape: torch.Size([6, 232, 512])
+Validation Epoch 12: 100%|███████████████████████████████████████████████████████████████████████████| 1/1 [00:00<00:00, 12.06it/s, val_loss=7.688283]
+Input image shape: torch.Size([2, 1, 128, 937])
+Raw backbone features shape: torch.Size([2, 768, 4, 29])
+Final encoder output shape: torch.Size([2, 116, 512])
+Train Loss: 7.744655, Val Loss: 7.688283
+
+=== Epoch 13/200 ===
+Training Epoch 13: 100%|████████████████████████████████████████████████████████████████████| 1/1 [00:00<00:00,  5.01it/s, loss=7.739177, lr=5.00e-05]
+Input image shape: torch.Size([6, 1, 128, 1871])
+Raw backbone features shape: torch.Size([6, 768, 4, 58])
+Final encoder output shape: torch.Size([6, 232, 512])
+Validation Epoch 13: 100%|███████████████████████████████████████████████████████████████████████████| 1/1 [00:00<00:00, 11.87it/s, val_loss=7.688283]
+Input image shape: torch.Size([2, 1, 128, 937])
+Raw backbone features shape: torch.Size([2, 768, 4, 29])
+Final encoder output shape: torch.Size([2, 116, 512])
+Train Loss: 7.739177, Val Loss: 7.688283
+
+=== Epoch 14/200 ===
+Training Epoch 14: 100%|████████████████████████████████████████████████████████████████████| 1/1 [00:00<00:00,  5.47it/s, loss=7.685612, lr=5.00e-05]
+Input image shape: torch.Size([6, 1, 128, 1871])
+Raw backbone features shape: torch.Size([6, 768, 4, 58])
+Final encoder output shape: torch.Size([6, 232, 512])
+Validation Epoch 14: 100%|███████████████████████████████████████████████████████████████████████████| 1/1 [00:00<00:00, 12.97it/s, val_loss=7.688283]
+Input image shape: torch.Size([2, 1, 128, 937])
+Raw backbone features shape: torch.Size([2, 768, 4, 29])
+Final encoder output shape: torch.Size([2, 116, 512])
+Train Loss: 7.685612, Val Loss: 7.688283
+
+=== Epoch 15/200 ===
+Training Epoch 15: 100%|████████████████████████████████████████████████████████████████████| 1/1 [00:00<00:00,  5.14it/s, loss=7.757067, lr=5.00e-05]
+Input image shape: torch.Size([6, 1, 128, 1871])
+Raw backbone features shape: torch.Size([6, 768, 4, 58])
+Final encoder output shape: torch.Size([6, 232, 512])
+Validation Epoch 15: 100%|███████████████████████████████████████████████████████████████████████████| 1/1 [00:00<00:00, 12.16it/s, val_loss=7.688283]
+Input image shape: torch.Size([2, 1, 128, 937])
+Raw backbone features shape: torch.Size([2, 768, 4, 29])
+Final encoder output shape: torch.Size([2, 116, 512])
+Train Loss: 7.757067, Val Loss: 7.688283
+
+=== Epoch 16/200 ===
+Training Epoch 16: 100%|████████████████████████████████████████████████████████████████████| 1/1 [00:00<00:00,  5.38it/s, loss=7.727754, lr=2.50e-05]
+Input image shape: torch.Size([6, 1, 128, 1871])
+Raw backbone features shape: torch.Size([6, 768, 4, 58])
+Final encoder output shape: torch.Size([6, 232, 512])
+Validation Epoch 16: 100%|███████████████████████████████████████████████████████████████████████████| 1/1 [00:00<00:00, 12.15it/s, val_loss=7.688283]
+Input image shape: torch.Size([2, 1, 128, 937])
+Raw backbone features shape: torch.Size([2, 768, 4, 29])
+Final encoder output shape: torch.Size([2, 116, 512])
+Train Loss: 7.727754, Val Loss: 7.688283
+Early stopping triggered after 15 epochs without improvement
+
+=== Training Complete ===
+Best validation loss: 7.688283

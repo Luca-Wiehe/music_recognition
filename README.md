@@ -14,7 +14,7 @@ I selected PyTorch for this project due to its dynamic computation graph for fle
 
 ### Setup
 ```
-pip install torch torchvision ipykernel prettykernel matplotlib
+pip install torch torchvision ipykernel prettykernel matplotlib pyyaml wandb
 ```
 
 ### Dataset

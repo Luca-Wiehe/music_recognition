@@ -1,0 +1,31 @@
+
+=== Epoch 1/200 ===
+Training Epoch 1:   0%|                                                                                                         | 0/1 [00:01<?, ?it/s]
+Traceback (most recent call last):
+  File "/home/stud/wiel/music_recognition/train.py", line 456, in <module>
+    main()
+  File "/home/stud/wiel/music_recognition/train.py", line 452, in main
+    train(config, args.resume)
+  File "/home/stud/wiel/music_recognition/train.py", line 387, in train
+    train_loss = train_epoch(model, train_loader, optimizer, device, epoch + 1, config, wandb_run)
+  File "/home/stud/wiel/music_recognition/train.py", line 259, in train_epoch
+    loss = model.training_step(batch, device)
+  File "/home/stud/wiel/music_recognition/networks/luca_model.py", line 505, in training_step
+    outputs = self.forward(images, targets)
+  File "/home/stud/wiel/music_recognition/networks/luca_model.py", line 411, in forward
+    memory = self.encode_image(images)  # (B, src_len, d_model)
+  File "/home/stud/wiel/music_recognition/networks/luca_model.py", line 356, in encode_image
+    return self.vision_encoder(images)
+  File "/home/stud/wiel/miniconda3/envs/music_recognition/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1773, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/home/stud/wiel/miniconda3/envs/music_recognition/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1784, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/home/stud/wiel/music_recognition/networks/luca_model.py", line 133, in forward
+    features = self.feature_proj(features)  # (B, H, W, d_model)
+  File "/home/stud/wiel/miniconda3/envs/music_recognition/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1773, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/home/stud/wiel/miniconda3/envs/music_recognition/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1784, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/home/stud/wiel/miniconda3/envs/music_recognition/lib/python3.10/site-packages/torch/nn/modules/linear.py", line 125, in forward
+    return F.linear(input, self.weight, self.bias)
+RuntimeError: mat1 and mat2 shapes cannot be multiplied (18432x58 and 768x512)

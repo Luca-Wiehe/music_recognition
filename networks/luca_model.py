@@ -119,7 +119,9 @@ class VisionEncoder(nn.Module):
             
         # Handle different feature map shapes
         if len(features.shape) == 4:  # (B, H, W, C) or (B, C, H, W)
-            if features.shape[-1] == features.shape[1]:  # Likely (B, C, H, W)
+            # For ConvNeXt and similar models, output is typically (B, C, H, W)
+            # Check if channels dimension is likely to be the large one
+            if features.shape[1] > features.shape[-1]:  # Likely (B, C, H, W)
                 features = features.permute(0, 2, 3, 1)  # -> (B, H, W, C)
             # features is now (B, H, W, C)
         elif len(features.shape) == 3:  # Already flattened (B, seq_len, C)

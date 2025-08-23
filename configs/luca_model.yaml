@@ -10,7 +10,7 @@ model:
     #          microsoft/convnext-small-224 (~50M params)  
     #          google/vit-base-patch16-224 (~86M params)
     #          facebook/deit-base-patch16-224 (~86M params)
-    vision_model_name: "microsoft/convnext-tiny-224"
+    vision_model_name: "facebook/convnext-tiny-224"
     
     # Transformer decoder parameters
     d_model: 512              # Hidden dimension
@@ -22,7 +22,7 @@ model:
 
 # Data configuration
 data:
-  dataset_path: "data/primus/primusCalvoRizoAppliedSciences2018/package_aa"
+  dataset_path: "data/primus/package_aa"
   vocabulary_path: "data/semantic_labels.txt"
   split_ratio: [0.6, 0.2, 0.2]  # train, val, test
   num_workers: 4
