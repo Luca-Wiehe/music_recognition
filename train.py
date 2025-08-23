@@ -305,6 +305,11 @@ def validate_epoch(model: torch.nn.Module,
     total_loss = 0.0
     num_batches = len(val_loader)
     
+    # Handle case where validation dataset is empty (overfitting scenario)
+    if num_batches == 0:
+        print(f"Validation Epoch {epoch}: No validation data available (overfitting mode)")
+        return 0.0
+    
     # Create progress bar
     val_loop = utils.create_tqdm_bar(val_loader, desc=f"Validation Epoch {epoch}")
     
@@ -329,8 +334,8 @@ def validate_epoch(model: torch.nn.Module,
     
     avg_loss = total_loss / num_batches
     
-    # Log to wandb
-    if wandb_run:
+    # Log to wandb (only if we have validation data)
+    if wandb_run and num_batches > 0:
         wandb_run.log({
             'val/loss': avg_loss,
             'epoch': epoch
@@ -389,29 +394,46 @@ def train(config: dict, resume_path: str = None):
         # Validate
         val_loss = validate_epoch(model, val_loader, device, epoch + 1, wandb_run)
         
-        print(f"Train Loss: {train_loss:.6f}, Val Loss: {val_loss:.6f}")
+        # Print losses (handle case where val_loss is 0.0 due to no validation data)
+        if val_loss == 0.0 and len(val_loader) == 0:
+            print(f"Train Loss: {train_loss:.6f}, Val Loss: N/A (overfitting mode)")
+        else:
+            print(f"Train Loss: {train_loss:.6f}, Val Loss: {val_loss:.6f}")
         
         # Learning rate scheduling
         if scheduler:
             if isinstance(scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
-                scheduler.step(val_loss)
+                # Use train_loss for scheduling when no validation data is available
+                metric_for_scheduler = val_loss if len(val_loader) > 0 else train_loss
+                scheduler.step(metric_for_scheduler)
             else:
                 scheduler.step()
         
-        # Check for best model
-        is_best = val_loss < best_loss
+        # Check for best model (use train_loss when no validation data available)
+        if len(val_loader) > 0:
+            # Normal validation-based early stopping
+            is_best = val_loss < best_loss
+            metric_for_comparison = val_loss
+            metric_name = "validation"
+        else:
+            # Overfitting mode - use training loss for comparison
+            is_best = train_loss < best_loss
+            metric_for_comparison = train_loss
+            metric_name = "training"
+        
         if is_best:
-            best_loss = val_loss
+            best_loss = metric_for_comparison
             patience_counter = 0
-            print(f"New best validation loss: {best_loss:.6f}")
+            print(f"New best {metric_name} loss: {best_loss:.6f}")
         else:
             patience_counter += 1
         
         # Save checkpoint
-        save_checkpoint(model, optimizer, scheduler, epoch, val_loss, config, checkpoint_dir, is_best)
+        checkpoint_loss = val_loss if len(val_loader) > 0 else train_loss
+        save_checkpoint(model, optimizer, scheduler, epoch, checkpoint_loss, config, checkpoint_dir, is_best)
         
-        # Early stopping
-        if patience_counter >= early_stop_patience:
+        # Early stopping (disabled in overfitting mode to let the model fully overfit)
+        if len(val_loader) > 0 and patience_counter >= early_stop_patience:
             print(f"Early stopping triggered after {patience_counter} epochs without improvement")
             break
         

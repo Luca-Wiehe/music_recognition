@@ -1,0 +1,44 @@
+{
+  "os": "Linux-6.14.0-28-generic-x86_64-with-glibc2.39",
+  "python": "CPython 3.10.18",
+  "startedAt": "2025-08-23T10:50:31.974288Z",
+  "args": [
+    "--config",
+    "configs/luca_model.yaml"
+  ],
+  "program": "/home/stud/wiel/music_recognition/train.py",
+  "codePath": "train.py",
+  "codePathLocal": "train.py",
+  "git": {
+    "remote": "git@github.com:Luca-Wiehe/music_recognition.git",
+    "commit": "72f731e9564b12d0583f5030df55236780e85a64"
+  },
+  "email": "luca@wiehe.com",
+  "root": "/home/stud/wiel/music_recognition",
+  "host": "atcremers76",
+  "executable": "/home/stud/wiel/miniconda3/envs/music_recognition/bin/python",
+  "cpu_count": 4,
+  "cpu_count_logical": 4,
+  "gpu": "NVIDIA RTX A2000 12GB",
+  "gpu_count": 1,
+  "disk": {
+    "/": {
+      "total": "52521566208",
+      "used": "29833723904"
+    }
+  },
+  "memory": {
+    "total": "16653651968"
+  },
+  "gpu_nvidia": [
+    {
+      "name": "NVIDIA RTX A2000 12GB",
+      "memoryTotal": "12878610432",
+      "cudaCores": 3328,
+      "architecture": "Ampere",
+      "uuid": "GPU-5cd95aba-2f76-7aa8-248f-755257678e34"
+    }
+  ],
+  "cudaVersion": "12.8",
+  "writerId": "fm6lpckmw9ugu3dky9wdqvgcfuh3ktho"
+}
