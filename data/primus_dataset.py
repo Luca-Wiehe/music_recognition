@@ -29,7 +29,11 @@ class PrimusDataset(data.Dataset):
     """
 
     def __init__(self, data_path, vocabulary_path, transform=None):
-        self.data_path = data_path
+        # Handle both single path (string) and multiple paths (list)
+        if isinstance(data_path, str):
+            self.data_paths = [data_path]
+        else:
+            self.data_paths = data_path
         self.transform = transform
 
         # list of tuples containing image and label file paths
@@ -49,26 +53,32 @@ class PrimusDataset(data.Dataset):
         
         dict_file.close()
 
-        # iterate through each subdirectory (corresponding to a sample)
-        for sample_dir in os.listdir(data_path):
+        # iterate through each data path
+        for data_path in self.data_paths:
+            # iterate through each subdirectory (corresponding to a sample)
+            for sample_dir in os.listdir(data_path):
 
-            sample_dir_path = os.path.join(data_path, sample_dir)
+                sample_dir_path = os.path.join(data_path, sample_dir)
 
-            image_file = None
-            semantic_file = None
+                image_file = None
+                semantic_file = None
 
-            # .png-file contains image, .semantic-file contains labels
-            for file in os.listdir(sample_dir_path):
-                if file.endswith(".png"):
-                    image_file = os.path.join(sample_dir_path, file)
-                elif file.endswith(".semantic"):
-                    semantic_file = os.path.join(sample_dir_path, file)
+                # .png-file contains image, .semantic-file contains labels
+                for file in os.listdir(sample_dir_path):
+                    # Skip files starting with "._" (macOS metadata files)
+                    if file.startswith("._"):
+                        continue
+                        
+                    if file.endswith(".png"):
+                        image_file = os.path.join(sample_dir_path, file)
+                    elif file.endswith(".semantic"):
+                        semantic_file = os.path.join(sample_dir_path, file)
 
-            # check if a (image, label)-pair could be found
-            if image_file and semantic_file:
-                self.data.append((image_file, semantic_file))
-            else:
-                print(f"Couldn't find {'Image in ' + str(sample_dir_path) if not image_file else 'Labels in ' + str(sample_dir_path)}!")
+                # check if a (image, label)-pair could be found
+                if image_file and semantic_file:
+                    self.data.append((image_file, semantic_file))
+                else:
+                    print(f"Couldn't find {'Image in ' + str(sample_dir_path) if not image_file else 'Labels in ' + str(sample_dir_path)}!")
 
 
     def __getitem__(self, index):

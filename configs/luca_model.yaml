@@ -17,7 +17,9 @@ model:
 
 # Data configuration
 data:
-  dataset_path: "data/primus/package_aa"
+  dataset_path: 
+    - "data/primus/package_aa"
+    - "data/primus/package_ab"
   vocabulary_path: "data/semantic_labels.txt"
   split_ratio: [0.8, 0.15, 0.05]  # train, val, test
   num_workers: 4
@@ -25,7 +27,7 @@ data:
 
 # Training configuration
 training:
-  batch_size: 32
+  batch_size: 8
   epochs: 200
   
   # Optimizer settings

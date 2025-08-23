@@ -3,3 +3,6 @@
 /logs/
 /networks/checkpoints/*
 !/networks/checkpoints/.gitkeep
+/wandb/
+*/__pycache__/
+*.pyc

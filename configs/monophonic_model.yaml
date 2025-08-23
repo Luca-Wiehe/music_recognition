@@ -8,7 +8,9 @@ model:
 
 # Data configuration
 data:
-  dataset_path: "data/primus/primusCalvoRizoAppliedSciences2018/package_aa"
+  dataset_path:
+    - "data/primus/package_aa"
+    - "data/primus/package_ab"
   vocabulary_path: "data/semantic_labels.txt"
   split_ratio: [0.6, 0.2, 0.2]  # train, val, test
   num_workers: 2
