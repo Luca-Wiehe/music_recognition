@@ -14,3 +14,11 @@ dependencies:
     - transformers
     - wandb
     - pyyaml
+    - verovio
+    - cairosvg
+    - wand
+    - names
+    - wonderwords
+    - opencv-python
+    - pillow
+    - datasets

@@ -18,7 +18,8 @@ import torch.utils.data as data
 from torch.utils.data import DataLoader
 
 # Data imports
-from data.primus_dataset import PrimusDataset, split_data, collate_fn
+from data.unified_dataset import UnifiedDataset, collate_fn
+from data.primus_dataset import split_data  # Keep split_data utility function
 
 # Model imports
 from networks.luca_model import MusicTrOCR
@@ -68,14 +69,43 @@ def setup_data_loaders(config: dict) -> tuple:
     """Setup train, validation, and test data loaders"""
     data_config = config['data']
     
-    # Create dataset
-    dataset = PrimusDataset(
-        data_path=data_config['dataset_path'],
-        vocabulary_path=data_config['vocabulary_path']
+    # Extract data paths from new config format
+    data_paths = []
+    primus_paths = []
+    bekern_paths = []
+    
+    for dataset_info in data_config['datasets']:
+        path = dataset_info['path']
+        format_type = dataset_info['format']
+        
+        data_paths.append(path)
+        if format_type == 'primus':
+            primus_paths.append(path)
+        elif format_type == 'bekern':
+            bekern_paths.append(path)
+        else:
+            raise ValueError(f"Unknown dataset format: {format_type}")
+    
+    print(f"Loading datasets:")
+    print(f"  Primus format: {len(primus_paths)} datasets")
+    print(f"  BeKern format: {len(bekern_paths)} datasets")
+    
+    # Create UnifiedDataset (always converts to BeKern format)
+    dataset = UnifiedDataset(
+        data_paths=data_paths,
+        bekern_vocab_path=data_config['bekern_vocabulary_path'],
+        mapping_file_path=data_config.get('mapping_file_path'),
+        transform=None
     )
     
-    print(f"Dataset loaded with {len(dataset)} samples")
-    print(f"Vocabulary size: {len(dataset.vocabulary_to_index)}")
+    print(f"UnifiedDataset loaded with {len(dataset)} samples")
+    print(f"BeKern vocabulary size: {len(dataset.vocabulary_to_index)}")
+    
+    # Show conversion statistics
+    conversion_stats = dataset.get_conversion_stats()
+    if conversion_stats['missing_tokens_encountered'] > 0:
+        print(f"Warning: {conversion_stats['missing_tokens_encountered']} unique tokens could not be converted")
+        print("Consider updating the mapping file for better conversion coverage")
     
     # Split data
     train_data, val_data, test_data = split_data(
@@ -358,7 +388,15 @@ def train(config: dict, resume_path: str = None):
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
     
     # Setup data loaders
-    train_loader, val_loader, test_loader, vocab_size = setup_data_loaders(config)
+    try:
+        train_loader, val_loader, test_loader, vocab_size = setup_data_loaders(config)
+    except Exception as e:
+        print(f"Error setting up data loaders: {e}")
+        print("Please check your data configuration and ensure:")
+        print("  1. Dataset paths exist and contain valid data")
+        print("  2. BeKern vocabulary file exists at specified path")
+        print("  3. Mapping file exists and contains valid mappings")
+        raise
     
     # Create model
     model = create_model(config, vocab_size)

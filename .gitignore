@@ -1,8 +1,10 @@
 # ignore dataset
-/data/primus/
+/data/datasets/*
+!/data/datasets/.gitkeep
 /logs/
 /networks/checkpoints/*
 !/networks/checkpoints/.gitkeep
 /wandb/
+/third_party/
 */__pycache__/
 *.pyc

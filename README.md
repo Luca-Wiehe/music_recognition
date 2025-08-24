@@ -4,33 +4,73 @@ This repository is a PyTorch implementation of several optical music recognition
 
 ## Preview 
 
-## Project Description
-
-### Motivation for Application
-As a musician for many years, I often had to play according to musical notation - without having an idea what the notation may sound like. Converting music scores to a playable sound representation. This project is an endeavour to automate this process to make the learning process more enjoyable.
-
-### Choice of Tech Stack
-I selected PyTorch for this project due to its dynamic computation graph for flexible model adaptation, comprehensive ecosystem for accelerated development, and robust GPU support for efficient training and inference, making it optimal for advanced deep learning needs. Additionally, Pytorch has a lightweight integration for iOS mobile devices which may be beneficial when deploying the project in the future. 
-
-### Setup
-```
-pip install torch torchvision ipykernel prettykernel matplotlib pyyaml wandb
+## Setup
+```bash
+conda env create -f environment.yaml
+conda activate music_recognition
 ```
 
-### Dataset
+### Data Download and Preprocessing
+In `scripts/download.py`, we provide a script to download all relevant datasets for Optical Music Recognition. The script handles two types of datasets:
+
+1. **Camera Primus Dataset**: Real sheet music images with semantic labels (for training)
+2. **SMT HuggingFace Datasets**: Bekern sequences (for synthetic data generation)
+
+#### Quick Start
+```bash
+# Download Camera Primus dataset (required for training)
+python scripts/download.py --primus
+
+# Download SMT datasets for synthetic generation (optional)
+python scripts/download.py --smt grandstaff-ekern
+
+# Download everything
+python scripts/download.py --primus --smt-all
 ```
-cd data/primus
-wget https://grfia.dlsi.ua.es/primus/packages/primusCalvoRizoAppliedSciences2018.tgz
-tar -xzvf primusCalvoRizoAppliedSciences2018.tgz
-```
+
+<details>
+<summary>Available Command Line Arguments</summary>
+
+| Argument | Description | Source |
+|----------|-------------|---------|
+| `--primus` | Download Camera Primus dataset | https://grfia.dlsi.ua.es/primus/ |
+| `--smt <dataset>` | Download specific SMT dataset(s) | HuggingFace (antoniorv6/*) |
+| `--smt-all` | Download all SMT datasets | HuggingFace (antoniorv6/*) |
+| `--list-smt` | List available SMT datasets | - |
+| `--output_dir` | Base output directory | Default: `data/datasets` |
+| `--splits` | Dataset splits to download | Default: train, validation, test |
+
+**Available SMT Datasets:**
+- `grandstaff`: GrandStaff system-level (original format)
+- `grandstaff-ekern`: GrandStaff in ekern format  
+- `grandstaff-bekern`: GrandStaff in bekern format
+- `mozarteum`: Mozarteum dataset
+- `polish-scores`: Polish Scores dataset
+- `string-quartets`: String Quartets dataset
+
+</details>
+
+The data will be stored in the `/data/datasets/` folder organized as:
+- `/data/datasets/primus/`: Camera Primus dataset (images + semantic labels)
+- `/data/datasets/smt_datasets/`: SMT bekern datasets (for synthetic generation)
 
 
 ### Repository Structure
-`/data/`: Contains datasets and scripts for data preprocessing
-- `/data/primus/`: The Camera Primus Dataset
-- `/data/monophonic_nn.py`: Neural networks for monophonic models, i.e. single instrument scores (no two-handed piano)
-
-`/networks/`: Contains neural networks for OMR tasks
+```
+├── data/
+│   ├── datasets/                    # Downloaded datasets
+│   │   ├── primus/                  # Camera Primus dataset (images + semantic labels)
+│   │   ├── smt_datasets/            # SMT bekern datasets (for synthetic generation)
+│   │   └── synthetic/               # Generated synthetic data
+│   └── utils/                       # Data processing utilities
+│       ├── format_converter.py      # Primus to bekern format conversion
+│       └── synthetic_generator.py   # Synthetic image generation using Verovio
+├── networks/                        # Neural networks for OMR tasks
+├── scripts/                         # Utility scripts
+│   ├── download.py                  # Dataset download script
+│   └── generate_synthetic_data.py   # Synthetic data generation script
+└── ...
+```
 
 ## Implemented Networks
 ### CRNN
