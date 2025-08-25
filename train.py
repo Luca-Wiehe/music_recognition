@@ -96,8 +96,7 @@ def setup_data_loaders(config: dict) -> tuple:
         data_paths=data_paths,
         bekern_vocab_path=data_config['bekern_vocabulary_path'],
         mapping_file_path=data_config.get('mapping_file_path'),
-        transform=None,
-        data_formats=[dataset_info['format'] for dataset_info in data_config['datasets']]
+        transform=None
     )
     
     print(f"Using automatic train/val/test splits:")

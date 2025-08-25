@@ -36,7 +36,7 @@ data:
 
 # Training configuration
 training:
-  batch_size: 32
+  batch_size: 64
   epochs: 200
   
   # Optimizer settings
