@@ -191,9 +191,12 @@ def get_vocabulary_from_model(model) -> Dict[int, str]:
             else:
                 return model.vocab
     else:
-        # Fallback: create simple numeric vocabulary
-        print("Warning: Could not find vocabulary in model, using numeric fallback")
-        return {i: f"token_{i}" for i in range(1000)}
+        # No fallback: crash if vocabulary is not found
+        raise AttributeError(
+            "Could not find vocabulary in model. Expected one of: "
+            "'index_to_vocabulary', 'i2w', 'vocab.i2w', or 'vocab' (dict). "
+            "Please ensure the model has a proper vocabulary mapping."
+        )
 
 
 def print_debug_info(predictions: torch.Tensor,

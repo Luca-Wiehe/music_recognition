@@ -569,8 +569,7 @@ class MusicTrOCR(nn.Module):
         
         # Debug output if enabled
         if (config and epoch is not None and batch_idx is not None and 
-            config.get('logging', {}).get('verbose', False) and 
-            (batch_idx == 0 or batch_idx % 100 == 0)):
+            config.get('logging', {}).get('verbose', False)):
             from utils.debug_utils import print_debug_info
             print_debug_info(logits, decoder_target, loss, self, epoch, batch_idx)
         
@@ -618,10 +617,9 @@ class MusicTrOCR(nn.Module):
             
             loss = F.cross_entropy(logits_flat, targets_flat, ignore_index=self.PAD_TOKEN_ID)
             
-            # Debug output if enabled (less frequent than training)
+            # Debug output if enabled
             if (config and epoch is not None and batch_idx is not None and 
-                config.get('logging', {}).get('verbose', False) and 
-                batch_idx == 0):  # Only print for first batch of validation
+                config.get('logging', {}).get('verbose', False)):
                 from utils.debug_utils import print_debug_info
                 print_debug_info(logits, decoder_target, loss, self, epoch, batch_idx, phase="VALIDATION")
             

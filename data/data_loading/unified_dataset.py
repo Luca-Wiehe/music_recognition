@@ -29,7 +29,8 @@ class UnifiedDataset(data.Dataset):
                  bekern_vocab_path: str,
                  mapping_file_path: Optional[str] = None,
                  transform: Optional[callable] = None,
-                 split: Optional[str] = None):
+                 split: Optional[str] = None,
+                 data_formats: Optional[Union[str, List[str]]] = None):
         """
         Initialize the UnifiedDataset.
         
@@ -42,6 +43,8 @@ class UnifiedDataset(data.Dataset):
             transform: Optional image transforms to apply
             split: Optional split name ('train', 'val', 'test'). If provided,
                   will load only from the specified split subdirectory.
+            data_formats: Format(s) corresponding to each data path. Can be 'primus' or 'bekern'.
+                         If a single string, applies to all paths. If a list, must match data_paths length.
         """
         # Handle both single path and multiple paths
         if isinstance(data_paths, str):
@@ -49,9 +52,24 @@ class UnifiedDataset(data.Dataset):
         else:
             self.data_paths = data_paths
         
+        # Handle data formats
+        if data_formats is None:
+            # Default to primus format for backward compatibility
+            self.data_formats = ['primus'] * len(self.data_paths)
+        elif isinstance(data_formats, str):
+            self.data_formats = [data_formats] * len(self.data_paths)
+        else:
+            self.data_formats = data_formats
+            
+        if len(self.data_formats) != len(self.data_paths):
+            raise ValueError("data_formats must match the length of data_paths")
+        
+        # Create a mapping from path to format for easy lookup
+        self.path_to_format = dict(zip(self.data_paths, self.data_formats))
+        
         self.transform = transform
         self.split = split
-        self.data = []  # List of (image_path, labels_path) tuples
+        self.data = []  # List of (image_path, labels_path, format) tuples
         
         # Initialize format converter
         self.converter = PrimusToBeKernConverter(mapping_file_path)
@@ -135,6 +153,23 @@ class UnifiedDataset(data.Dataset):
     
     def _load_samples_from_directory(self, directory_path: str):
         """Load samples from a specific directory."""
+        # Determine the format for this directory
+        data_format = None
+        for path, fmt in self.path_to_format.items():
+            if directory_path.startswith(path):
+                data_format = fmt
+                break
+        
+        if data_format is None:
+            # Fallback: check if any parent path matches
+            for path, fmt in self.path_to_format.items():
+                if path in directory_path:
+                    data_format = fmt
+                    break
+            
+        if data_format is None:
+            data_format = 'primus'  # Default fallback
+        
         # Iterate through each subdirectory (sample)
         for sample_dir in os.listdir(directory_path):
             sample_dir_path = os.path.join(directory_path, sample_dir)
@@ -158,7 +193,7 @@ class UnifiedDataset(data.Dataset):
             
             # Check if we have both image and labels
             if image_file and semantic_file:
-                self.data.append((image_file, semantic_file))
+                self.data.append((image_file, semantic_file, data_format))
             else:
                 missing = []
                 if not image_file:
@@ -177,13 +212,13 @@ class UnifiedDataset(data.Dataset):
         Returns:
             Tuple of (image_tensor, labels_tensor)
         """
-        image_path, labels_path = self.data[index]
+        image_path, labels_path, data_format = self.data[index]
         
         # Load and process image
         image = self._load_and_process_image(image_path)
         
         # Load and convert labels
-        labels = self._load_and_convert_labels(labels_path)
+        labels = self._load_and_convert_labels(labels_path, data_format)
         
         return image, labels
     
@@ -221,14 +256,18 @@ class UnifiedDataset(data.Dataset):
             # Return a dummy image tensor as fallback
             return torch.zeros(1, 128, 256)
     
-    def _load_and_convert_labels(self, labels_path: str) -> torch.Tensor:
-        """Load Camera Primus labels and convert to BeKern format."""
+    def _load_and_convert_labels(self, labels_path: str, data_format: str) -> torch.Tensor:
+        """Load labels and convert to BeKern format if necessary."""
         try:
-            # Load Primus tokens
-            primus_tokens = load_primus_labels_from_file(labels_path)
-            
-            # Convert to BeKern format
-            bekern_tokens = self.converter.convert_sequence_with_markers(primus_tokens)
+            if data_format == 'bekern':
+                # This is already a BeKern format file
+                bekern_tokens = self._load_bekern_tokens_from_file(labels_path)
+            elif data_format == 'primus':
+                # This is a Primus format file, convert it
+                primus_tokens = load_primus_labels_from_file(labels_path)
+                bekern_tokens = self.converter.convert_sequence_with_markers(primus_tokens)
+            else:
+                raise ValueError(f"Unknown data format: {data_format}")
             
             # Convert to indices using BeKern vocabulary
             indices = []
@@ -249,6 +288,38 @@ class UnifiedDataset(data.Dataset):
             logger.error(f"Error loading labels {labels_path}: {e}")
             # Return a dummy label tensor as fallback
             return torch.tensor([0], dtype=torch.long)
+    
+    def _load_bekern_tokens_from_file(self, labels_path: str) -> List[str]:
+        """Load BeKern tokens from a .semantic file that's already in BeKern format."""
+        try:
+            with open(labels_path, 'r') as f:
+                lines = f.readlines()
+            
+            tokens = ['<bos>']  # Start token
+            
+            for line in lines:
+                line = line.strip()
+                if not line:
+                    continue
+                    
+                # Split by tabs and process both columns
+                parts = line.split('\t')
+                if len(parts) >= 2:
+                    # Process both left and right columns
+                    for part in parts:
+                        part = part.strip()
+                        if part and part != '.' and not part.startswith('**ekern'):
+                            # Split by spaces and add non-empty tokens
+                            for token in part.split():
+                                if token and token != '.':
+                                    tokens.append(token)
+            
+            tokens.append('<eos>')  # End token
+            return tokens
+            
+        except Exception as e:
+            logger.error(f"Error reading BeKern file {labels_path}: {e}")
+            return ['<bos>', '<eos>']
     
     def __len__(self) -> int:
         """Return the total number of samples in the dataset."""
@@ -335,7 +406,8 @@ def collate_fn(batch: List[Tuple[torch.Tensor, torch.Tensor]]) -> Tuple[torch.Te
 def create_split_datasets(data_paths: Union[str, List[str]], 
                          bekern_vocab_path: str,
                          mapping_file_path: Optional[str] = None,
-                         transform: Optional[callable] = None) -> Tuple[UnifiedDataset, UnifiedDataset, UnifiedDataset]:
+                         transform: Optional[callable] = None,
+                         data_formats: Optional[Union[str, List[str]]] = None) -> Tuple[UnifiedDataset, UnifiedDataset, UnifiedDataset]:
     """
     Create train, validation, and test datasets from parent directories.
     
@@ -344,6 +416,7 @@ def create_split_datasets(data_paths: Union[str, List[str]],
         bekern_vocab_path: Path to BeKern vocabulary file (.npy format)
         mapping_file_path: Path to Primus-to-BeKern mapping JSON file
         transform: Optional image transforms to apply
+        data_formats: Format(s) corresponding to each data path. Can be 'primus' or 'bekern'.
         
     Returns:
         Tuple of (train_dataset, val_dataset, test_dataset)
@@ -353,7 +426,8 @@ def create_split_datasets(data_paths: Union[str, List[str]],
         bekern_vocab_path=bekern_vocab_path,
         mapping_file_path=mapping_file_path,
         transform=transform,
-        split='train'
+        split='train',
+        data_formats=data_formats
     )
     
     val_dataset = UnifiedDataset(
@@ -361,7 +435,8 @@ def create_split_datasets(data_paths: Union[str, List[str]],
         bekern_vocab_path=bekern_vocab_path,
         mapping_file_path=mapping_file_path,
         transform=transform,
-        split='val'
+        split='val',
+        data_formats=data_formats
     )
     
     test_dataset = UnifiedDataset(
@@ -369,7 +444,8 @@ def create_split_datasets(data_paths: Union[str, List[str]],
         bekern_vocab_path=bekern_vocab_path,
         mapping_file_path=mapping_file_path,
         transform=transform,
-        split='test'
+        split='test',
+        data_formats=data_formats
     )
     
     return train_dataset, val_dataset, test_dataset

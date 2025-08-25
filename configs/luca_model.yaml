@@ -36,7 +36,7 @@ data:
 
 # Training configuration
 training:
-  batch_size: 8
+  batch_size: 32
   epochs: 200
   
   # Optimizer settings
@@ -69,7 +69,7 @@ training:
 # Logging configuration
 logging:
   use_wandb: true
-  verbose: false  # Enable detailed prediction vs ground truth debug output
+  verbose: false
   wandb:
     project: "music-recognition"
     run_name: "music-trocr-convnext-tiny"

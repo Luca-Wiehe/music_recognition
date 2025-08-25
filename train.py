@@ -96,7 +96,8 @@ def setup_data_loaders(config: dict) -> tuple:
         data_paths=data_paths,
         bekern_vocab_path=data_config['bekern_vocabulary_path'],
         mapping_file_path=data_config.get('mapping_file_path'),
-        transform=None
+        transform=None,
+        data_formats=[dataset_info['format'] for dataset_info in data_config['datasets']]
     )
     
     print(f"Using automatic train/val/test splits:")
@@ -394,12 +395,14 @@ def train(config: dict, resume_path: str = None):
     
     # Create model
     model = create_model(config, vocab_size)
+    
+    model.index_to_vocabulary = train_loader.dataset.index_to_vocabulary
+    model.vocabulary_to_index = train_loader.dataset.vocabulary_to_index
+    
     model.to(device)
-    
+
     print(f"Model: {config['model']['type']}")
-    print(f"Total parameters: {sum(p.numel() for p in model.parameters() if p.requires_grad):,}")
-    
-    # Setup optimizer and scheduler
+    print(f"Total parameters: {sum(p.numel() for p in model.parameters() if p.requires_grad):,}")    # Setup optimizer and scheduler
     optimizer, scheduler = setup_optimizer_and_scheduler(model, config)
     
     # Setup logging
