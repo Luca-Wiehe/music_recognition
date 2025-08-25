@@ -69,6 +69,7 @@ training:
 # Logging configuration
 logging:
   use_wandb: true
+  verbose: false  # Enable detailed prediction vs ground truth debug output
   wandb:
     project: "music-recognition"
     run_name: "music-trocr-convnext-tiny"

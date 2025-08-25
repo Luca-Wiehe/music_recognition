@@ -27,6 +27,7 @@ from networks.monophonic_nn import MonophonicModel
 
 # Utils
 import utils.utils as utils
+from utils.debug_utils import should_print_debug, print_debug_info
 
 try:
     import wandb
@@ -278,7 +279,7 @@ def train_epoch(model: torch.nn.Module,
         # Forward pass and compute loss
         if hasattr(model, 'training_step'):
             # For models with custom training_step (like MusicTrOCR)
-            loss = model.training_step(batch, device, optimizer, config)
+            loss = model.training_step(batch, device, optimizer, config, epoch, batch_idx)
         else:
             # For models using standard training loop (like MonophonicModel) 
             # This would need to be implemented based on the specific model
@@ -321,6 +322,7 @@ def validate_epoch(model: torch.nn.Module,
                   val_loader: DataLoader,
                   device: torch.device,
                   epoch: int,
+                  config: dict,
                   wandb_run=None) -> float:
     """Validate for one epoch"""
     model.eval()
@@ -340,7 +342,7 @@ def validate_epoch(model: torch.nn.Module,
             # Forward pass and compute loss
             if hasattr(model, 'validation_step'):
                 # For models with custom validation_step
-                loss = model.validation_step(batch, device)
+                loss = model.validation_step(batch, device, config, epoch, batch_idx)
             else:
                 # For standard models
                 images, targets = batch
@@ -422,7 +424,7 @@ def train(config: dict, resume_path: str = None):
         train_loss = train_epoch(model, train_loader, optimizer, device, epoch + 1, config, wandb_run)
         
         # Validate
-        val_loss = validate_epoch(model, val_loader, device, epoch + 1, wandb_run)
+        val_loss = validate_epoch(model, val_loader, device, epoch + 1, config, wandb_run)
         
         # Print losses (handle case where val_loss is 0.0 due to no validation data)
         if val_loss == 0.0 and len(val_loader) == 0:

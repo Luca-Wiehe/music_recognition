@@ -530,7 +530,7 @@ class MusicTrOCR(nn.Module):
                 
         return sequences
         
-    def training_step(self, batch, device, optimizer, config=None):
+    def training_step(self, batch, device, optimizer, config=None, epoch=None, batch_idx=None):
         """
         Perform a single training step.
         
@@ -539,6 +539,8 @@ class MusicTrOCR(nn.Module):
             device: Device to run computation on
             optimizer: Optimizer instance
             config: Training configuration dict
+            epoch: Current epoch (for debug output)
+            batch_idx: Current batch index (for debug output)
             
         Returns:
             Loss tensor
@@ -565,6 +567,13 @@ class MusicTrOCR(nn.Module):
         # Compute loss (ignore padding tokens)
         loss = F.cross_entropy(logits_flat, targets_flat, ignore_index=self.PAD_TOKEN_ID)
         
+        # Debug output if enabled
+        if (config and epoch is not None and batch_idx is not None and 
+            config.get('logging', {}).get('verbose', False) and 
+            (batch_idx == 0 or batch_idx % 100 == 0)):
+            from utils.debug_utils import print_debug_info
+            print_debug_info(logits, decoder_target, loss, self, epoch, batch_idx)
+        
         # Backward pass
         loss.backward()
         
@@ -577,13 +586,16 @@ class MusicTrOCR(nn.Module):
         
         return loss
         
-    def validation_step(self, batch, device):
+    def validation_step(self, batch, device, config=None, epoch=None, batch_idx=None):
         """
         Perform a validation step.
         
         Args:
             batch: Tuple of (images, targets) from dataloader
             device: Device to run computation on
+            config: Training configuration dict
+            epoch: Current epoch (for debug output)
+            batch_idx: Current batch index (for debug output)
             
         Returns:
             Loss tensor
@@ -605,6 +617,13 @@ class MusicTrOCR(nn.Module):
             targets_flat = decoder_target.view(-1)
             
             loss = F.cross_entropy(logits_flat, targets_flat, ignore_index=self.PAD_TOKEN_ID)
+            
+            # Debug output if enabled (less frequent than training)
+            if (config and epoch is not None and batch_idx is not None and 
+                config.get('logging', {}).get('verbose', False) and 
+                batch_idx == 0):  # Only print for first batch of validation
+                from utils.debug_utils import print_debug_info
+                print_debug_info(logits, decoder_target, loss, self, epoch, batch_idx, phase="VALIDATION")
             
         return loss
         

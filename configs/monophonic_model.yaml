@@ -83,6 +83,7 @@ early_stop:
 # Logging configuration
 logging:
   use_wandb: true
+  verbose: false  # Enable detailed prediction vs ground truth debug output
   wandb:
     project: "music-recognition"
     run_name: "monophonic-crnn-baseline"
