@@ -66,11 +66,18 @@ def create_model(config: dict, vocab_size: int) -> torch.nn.Module:
     return model
 
 
-def setup_data_loaders(config: dict) -> tuple:
-    """Setup train, validation, and test data loaders"""
+def setup_data_loaders(config: dict, stage: int = None) -> tuple:
+    """Setup train, validation, and test data loaders
+    
+    Args:
+        config: Configuration dictionary
+        stage: Training stage (1 or 2). If None, loads all datasets.
+               Stage 1: only full_page=false datasets
+               Stage 2: all datasets (both full_page=false and true)
+    """
     data_config = config['data']
     
-    # Extract data paths from new config format
+    # Extract data paths from new config format, filtering by stage if specified
     data_paths = []
     primus_paths = []
     bekern_paths = []
@@ -78,6 +85,12 @@ def setup_data_loaders(config: dict) -> tuple:
     for dataset_info in data_config['datasets']:
         path = dataset_info['path']
         format_type = dataset_info['format']
+        full_page = dataset_info.get('full_page', False)  # Default to False for backward compatibility
+        
+        # Filter based on training stage
+        if stage == 1 and full_page:
+            continue  # Skip full-page datasets in stage 1
+        # Stage 2 and None load all datasets
         
         data_paths.append(path)
         if format_type == 'primus':
@@ -87,7 +100,8 @@ def setup_data_loaders(config: dict) -> tuple:
         else:
             raise ValueError(f"Unknown dataset format: {format_type}")
     
-    print(f"Loading datasets:")
+    stage_info = f"Stage {stage}: " if stage else ""
+    print(f"Loading datasets - {stage_info}")
     print(f"  Primus format: {len(primus_paths)} datasets")
     print(f"  BeKern format: {len(bekern_paths)} datasets")
     
@@ -368,9 +382,9 @@ def validate_epoch(model: torch.nn.Module,
     return avg_loss
 
 
-def train(config: dict, resume_path: str = None):
-    """Main training function"""
-    print("=== Starting Training ===")
+def train_stage(config: dict, stage: int, resume_path: str = None, stage1_checkpoint: str = None):
+    """Train for a specific stage"""
+    print(f"=== Starting Training Stage {stage} ===")
     print(f"Config: {config}")
     
     # Setup device
@@ -379,13 +393,14 @@ def train(config: dict, resume_path: str = None):
     
     # Create output directories
     checkpoint_dir = Path(config['training']['checkpoint_dir'])
-    checkpoint_dir.mkdir(parents=True, exist_ok=True)
+    stage_checkpoint_dir = checkpoint_dir / f"stage_{stage}"
+    stage_checkpoint_dir.mkdir(parents=True, exist_ok=True)
     
-    # Setup data loaders
+    # Setup data loaders for this stage
     try:
-        train_loader, val_loader, test_loader, vocab_size = setup_data_loaders(config)
+        train_loader, val_loader, test_loader, vocab_size = setup_data_loaders(config, stage=stage)
     except Exception as e:
-        print(f"Error setting up data loaders: {e}")
+        print(f"Error setting up data loaders for stage {stage}: {e}")
         print("Please check your data configuration and ensure:")
         print("  1. Dataset paths exist and contain valid data")
         print("  2. BeKern vocabulary file exists at specified path")
@@ -401,17 +416,30 @@ def train(config: dict, resume_path: str = None):
     model.to(device)
 
     print(f"Model: {config['model']['type']}")
-    print(f"Total parameters: {sum(p.numel() for p in model.parameters() if p.requires_grad):,}")    # Setup optimizer and scheduler
+    print(f"Total parameters: {sum(p.numel() for p in model.parameters() if p.requires_grad):,}")
+    
+    # Setup optimizer and scheduler
     optimizer, scheduler = setup_optimizer_and_scheduler(model, config)
     
-    # Setup logging
-    wandb_run = setup_wandb(config, model)
+    # Setup logging (modify run name to include stage)
+    stage_config = copy.deepcopy(config)
+    if 'logging' in stage_config and 'wandb' in stage_config['logging']:
+        original_name = stage_config['logging']['wandb'].get('run_name', 'omr-training')
+        stage_config['logging']['wandb']['run_name'] = f"{original_name}-stage{stage}"
+    
+    wandb_run = setup_wandb(stage_config, model)
     
     # Setup checkpointing and resuming
     start_epoch = 0
     best_loss = float('inf')
     
-    if resume_path and os.path.exists(resume_path):
+    # Handle stage 2: load from stage 1 checkpoint if provided
+    if stage == 2 and stage1_checkpoint and os.path.exists(stage1_checkpoint):
+        print(f"Loading stage 1 checkpoint for stage 2: {stage1_checkpoint}")
+        start_epoch, best_loss = load_checkpoint(stage1_checkpoint, model, optimizer, scheduler)
+        start_epoch = 0  # Reset epoch counter for stage 2
+        best_loss = float('inf')  # Reset best loss for stage 2
+    elif resume_path and os.path.exists(resume_path):
         start_epoch, best_loss = load_checkpoint(resume_path, model, optimizer, scheduler)
     
     # Training loop
@@ -462,9 +490,9 @@ def train(config: dict, resume_path: str = None):
         else:
             patience_counter += 1
         
-        # Save checkpoint
+        # Save checkpoint to stage-specific directory
         checkpoint_loss = val_loss if len(val_loader) > 0 else train_loss
-        save_checkpoint(model, optimizer, scheduler, epoch, checkpoint_loss, config, checkpoint_dir, is_best)
+        save_checkpoint(model, optimizer, scheduler, epoch, checkpoint_loss, config, stage_checkpoint_dir, is_best)
         
         # Early stopping (disabled in overfitting mode to let the model fully overfit)
         if len(val_loader) > 0 and patience_counter >= early_stop_patience:
@@ -480,12 +508,56 @@ def train(config: dict, resume_path: str = None):
                 'best_val_loss': best_loss
             })
     
-    print(f"\n=== Training Complete ===")
+    print(f"\n=== Training Stage {stage} Complete ===")
     print(f"Best validation loss: {best_loss:.6f}")
     
     # Cleanup wandb
     if wandb_run:
         wandb_run.finish()
+    
+    # Return path to best checkpoint for potential use in next stage
+    best_checkpoint_path = stage_checkpoint_dir / 'best_checkpoint.pt'
+    return str(best_checkpoint_path) if best_checkpoint_path.exists() else None
+
+
+def train(config: dict, resume_path: str = None):
+    """Main training function that orchestrates two-stage training"""
+    print("=== Starting Two-Stage Training ===")
+    
+    # Check if we have any full-page datasets to determine if we need two stages
+    has_full_page_datasets = any(
+        dataset_info.get('full_page', False) 
+        for dataset_info in config['data']['datasets']
+    )
+    
+    has_single_staff_datasets = any(
+        not dataset_info.get('full_page', False) 
+        for dataset_info in config['data']['datasets']
+    )
+    
+    if not has_single_staff_datasets and not has_full_page_datasets:
+        raise ValueError("No datasets found in configuration")
+    
+    if has_single_staff_datasets and has_full_page_datasets:
+        print("Two-stage training detected:")
+        print("  Stage 1: Training on single-staff datasets only")
+        print("  Stage 2: Fine-tuning on all datasets (single-staff + full-page)")
+        
+        # Stage 1: Train on single-staff datasets only
+        stage1_checkpoint = train_stage(config, stage=1, resume_path=resume_path)
+        
+        # Stage 2: Fine-tune on all datasets using stage 1 checkpoint
+        train_stage(config, stage=2, stage1_checkpoint=stage1_checkpoint)
+        
+    elif has_single_staff_datasets:
+        print("Single-stage training: Only single-staff datasets found")
+        train_stage(config, stage=1, resume_path=resume_path)
+        
+    elif has_full_page_datasets:
+        print("Single-stage training: Only full-page datasets found") 
+        train_stage(config, stage=2, resume_path=resume_path)
+    
+    print("=== Two-Stage Training Complete ===")
 
 
 def main():

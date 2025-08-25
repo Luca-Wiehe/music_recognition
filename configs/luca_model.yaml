@@ -21,8 +21,10 @@ data:
   datasets:
     #- path: "data/datasets/primus"
     #  format: "primus"
+    #  full_page: false
     - path: "data/datasets/smt_datasets/camera-grandstaff"
       format: "bekern"
+      full_page: true
   
   # Vocabulary configuration
   primus_vocabulary_path: "data/semantic_labels.txt"  # For primus format datasets

@@ -13,14 +13,18 @@ data:
     # Example with parent directories (automatically uses train/val/test subdirectories):
     - path: "data/datasets/primus"
       format: "primus"
+      full_page: false
     # Legacy format still supported if needed:
     # - path: "data/primus/package_aa"
     #   format: "primus"
+    #   full_page: false
     # - path: "data/primus/package_ab"
     #   format: "primus"
+    #   full_page: false
     # Example of bekern format data:
     # - path: "data/datasets/smt_datasets/camera-grandstaff"
     #   format: "bekern"
+    #   full_page: true
   
   # Vocabulary configuration
   primus_vocabulary_path: "data/semantic_labels.txt"  # For primus format datasets
