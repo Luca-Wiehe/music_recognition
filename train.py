@@ -18,8 +18,8 @@ import torch.utils.data as data
 from torch.utils.data import DataLoader
 
 # Data imports
-from data.unified_dataset import UnifiedDataset, collate_fn
-from data.primus_dataset import split_data  # Keep split_data utility function
+from data.data_loading.unified_dataset import UnifiedDataset, collate_fn, create_split_datasets
+from data.data_loading.primus_dataset import split_data  # Keep split_data utility function
 
 # Model imports
 from networks.luca_model import MusicTrOCR
@@ -90,34 +90,26 @@ def setup_data_loaders(config: dict) -> tuple:
     print(f"  Primus format: {len(primus_paths)} datasets")
     print(f"  BeKern format: {len(bekern_paths)} datasets")
     
-    # Create UnifiedDataset (always converts to BeKern format)
-    dataset = UnifiedDataset(
+    # Create datasets using automatic train/val/test detection
+    train_dataset, val_dataset, test_dataset = create_split_datasets(
         data_paths=data_paths,
         bekern_vocab_path=data_config['bekern_vocabulary_path'],
         mapping_file_path=data_config.get('mapping_file_path'),
         transform=None
     )
     
-    print(f"UnifiedDataset loaded with {len(dataset)} samples")
-    print(f"BeKern vocabulary size: {len(dataset.vocabulary_to_index)}")
+    print(f"Using automatic train/val/test splits:")
+    print(f"  Train samples: {len(train_dataset)}")
+    print(f"  Validation samples: {len(val_dataset)}")
+    print(f"  Test samples: {len(test_dataset)}")
     
-    # Show conversion statistics
-    conversion_stats = dataset.get_conversion_stats()
-    if conversion_stats['missing_tokens_encountered'] > 0:
-        print(f"Warning: {conversion_stats['missing_tokens_encountered']} unique tokens could not be converted")
-        print("Consider updating the mapping file for better conversion coverage")
-    
-    # Split data
-    train_data, val_data, test_data = split_data(
-        dataset, 
-        ratio=tuple(data_config['split_ratio'])
-    )
+    vocab_size = len(train_dataset.vocabulary_to_index)
     
     # Create data loaders
     batch_size = config['training']['batch_size']
     
     train_loader = DataLoader(
-        train_data,
+        train_dataset,
         batch_size=batch_size,
         shuffle=True,
         collate_fn=collate_fn,
@@ -126,7 +118,7 @@ def setup_data_loaders(config: dict) -> tuple:
     )
     
     val_loader = DataLoader(
-        val_data,
+        val_dataset,
         batch_size=batch_size,
         shuffle=False,
         collate_fn=collate_fn,
@@ -135,7 +127,7 @@ def setup_data_loaders(config: dict) -> tuple:
     )
     
     test_loader = DataLoader(
-        test_data,
+        test_dataset,
         batch_size=batch_size,
         shuffle=False,
         collate_fn=collate_fn,
@@ -143,7 +135,7 @@ def setup_data_loaders(config: dict) -> tuple:
         pin_memory=data_config.get('pin_memory', False)
     )
     
-    return train_loader, val_loader, test_loader, len(dataset.vocabulary_to_index)
+    return train_loader, val_loader, test_loader, vocab_size
 
 
 def setup_optimizer_and_scheduler(model: torch.nn.Module, config: dict):

@@ -8,9 +8,9 @@ This module contains dataset classes and utilities for optical music recognition
 - PrimusToBeKernConverter: Format converter for Camera Primus to BeKern tokens
 """
 
-from .primus_dataset import PrimusDataset, split_data, visualize_sample, collate_fn
-from .format_converter import PrimusToBeKernConverter, load_primus_labels_from_file
-from .unified_dataset import UnifiedDataset, collate_fn as unified_collate_fn
+from .data_loading.primus_dataset import PrimusDataset, split_data, visualize_sample, collate_fn
+from .utils.format_converter import PrimusToBeKernConverter, load_primus_labels_from_file
+from .data_loading.unified_dataset import UnifiedDataset, collate_fn as unified_collate_fn
 
 __all__ = [
     # Original Primus dataset

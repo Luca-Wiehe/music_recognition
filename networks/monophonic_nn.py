@@ -4,7 +4,7 @@ Neural Networks for predicting monophonic score sequences.
 import torch
 import torch.nn as nn
 
-import data.primus_dataset as data
+import data.data_loading.primus_dataset as data
 import utils.utils as utils
 import copy
 

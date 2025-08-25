@@ -10,21 +10,24 @@ model:
 data:
   # List of datasets with their formats
   datasets:
-    - path: "data/primus/package_aa"
-      format: "primus"  # primus or bekern
-    - path: "data/primus/package_ab"
-      format: "primus"  # primus or bekern
+    # Example with parent directories (automatically uses train/val/test subdirectories):
+    - path: "data/datasets/primus"
+      format: "primus"
+    # Legacy format still supported if needed:
+    # - path: "data/primus/package_aa"
+    #   format: "primus"
+    # - path: "data/primus/package_ab"
+    #   format: "primus"
     # Example of bekern format data:
-    # - path: "data/bekern/dataset_1"
+    # - path: "data/datasets/smt_datasets/camera-grandstaff"
     #   format: "bekern"
   
   # Vocabulary configuration
   primus_vocabulary_path: "data/semantic_labels.txt"  # For primus format datasets
-  bekern_vocabulary_path: "third_party/SMT/vocab/FP_GrandStaff_BeKernw2i.npy"  # For bekern format datasets
+  bekern_vocabulary_path: "SMT/vocab/FP_GrandStaff_BeKernw2i.npy"  # For bekern format datasets
   mapping_file_path: "data/primus_to_bekern_mapping.json"  # Conversion mapping file
   
   # Data processing
-  split_ratio: [0.6, 0.2, 0.2]  # train, val, test
   num_workers: 2
   pin_memory: true
 

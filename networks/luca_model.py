@@ -23,7 +23,7 @@ from typing import Optional, Tuple, Dict, Any
 
 from transformers import AutoModel, AutoConfig
 
-import data.primus_dataset as data
+import data.data_loading.primus_dataset as data
 import utils.utils as utils
 
 

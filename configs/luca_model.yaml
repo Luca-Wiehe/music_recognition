@@ -19,18 +19,17 @@ model:
 data:
   # List of datasets with their formats
   datasets:
-    - path: "data/primus/package_aa"
-      format: "primus"  # primus or bekern
-    - path: "data/primus/package_ab" 
-      format: "primus"  # primus or bekern
+    #- path: "data/datasets/primus"
+    #  format: "primus"
+    - path: "data/datasets/smt_datasets/camera-grandstaff"
+      format: "bekern"
   
   # Vocabulary configuration
   primus_vocabulary_path: "data/semantic_labels.txt"  # For primus format datasets
-  bekern_vocabulary_path: "third_party/SMT/vocab/FP_GrandStaff_BeKernw2i.npy"  # For bekern format datasets
+  bekern_vocabulary_path: "data/FP_GrandStaff_BeKernw2i.npy"  # For bekern format datasets
   mapping_file_path: "data/primus_to_bekern_mapping.json"  # Conversion mapping file
   
   # Data processing
-  split_ratio: [0.8, 0.15, 0.05]  # train, val, test
   num_workers: 4
   pin_memory: true
   use_unified_format: true  # If true, convert all to bekern format for consistency

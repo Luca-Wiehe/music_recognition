@@ -28,15 +28,20 @@ class UnifiedDataset(data.Dataset):
                  data_paths: Union[str, List[str]], 
                  bekern_vocab_path: str,
                  mapping_file_path: Optional[str] = None,
-                 transform: Optional[callable] = None):
+                 transform: Optional[callable] = None,
+                 split: Optional[str] = None):
         """
         Initialize the UnifiedDataset.
         
         Args:
-            data_paths: Path(s) to directories containing Camera Primus data
+            data_paths: Path(s) to directories containing Camera Primus data.
+                       Can be either parent directories (which will automatically
+                       load from train/val/test subfolders) or specific subdirectories.
             bekern_vocab_path: Path to BeKern vocabulary file (.npy format)
             mapping_file_path: Path to Primus-to-BeKern mapping JSON file
             transform: Optional image transforms to apply
+            split: Optional split name ('train', 'val', 'test'). If provided,
+                  will load only from the specified split subdirectory.
         """
         # Handle both single path and multiple paths
         if isinstance(data_paths, str):
@@ -45,6 +50,7 @@ class UnifiedDataset(data.Dataset):
             self.data_paths = data_paths
         
         self.transform = transform
+        self.split = split
         self.data = []  # List of (image_path, labels_path) tuples
         
         # Initialize format converter
@@ -58,6 +64,8 @@ class UnifiedDataset(data.Dataset):
         self._load_data_samples()
         
         logger.info(f"Loaded {len(self.data)} samples from {len(self.data_paths)} directories")
+        if self.split:
+            logger.info(f"Using split: {self.split}")
         logger.info(f"BeKern vocabulary size: {len(self.vocabulary_to_index)}")
     
     def _load_bekern_vocabulary(self) -> Tuple[dict, dict]:
@@ -88,38 +96,76 @@ class UnifiedDataset(data.Dataset):
             if not os.path.exists(data_path):
                 logger.warning(f"Data path does not exist: {data_path}")
                 continue
-                
-            # Iterate through each subdirectory (sample)
-            for sample_dir in os.listdir(data_path):
-                sample_dir_path = os.path.join(data_path, sample_dir)
-                
-                if not os.path.isdir(sample_dir_path):
+            
+            # Check if this directory has train/val/test subdirectories
+            has_split_subdirs = self._has_split_subdirectories(data_path)
+            
+            if has_split_subdirs and self.split:
+                # Load from specific split subdirectory
+                split_path = os.path.join(data_path, self.split)
+                if os.path.exists(split_path):
+                    logger.info(f"Loading {self.split} split from: {split_path}")
+                    self._load_samples_from_directory(split_path)
+                else:
+                    logger.warning(f"Split directory does not exist: {split_path}")
+            elif has_split_subdirs and not self.split:
+                # Load from all split subdirectories
+                for split_name in ['train', 'val', 'test']:
+                    split_path = os.path.join(data_path, split_name)
+                    if os.path.exists(split_path):
+                        logger.info(f"Loading {split_name} split from: {split_path}")
+                        self._load_samples_from_directory(split_path)
+            else:
+                # Load directly from the provided directory (legacy behavior)
+                logger.info(f"Loading samples from: {data_path}")
+                self._load_samples_from_directory(data_path)
+    
+    def _has_split_subdirectories(self, data_path: str) -> bool:
+        """Check if a directory contains train/val/test subdirectories."""
+        required_splits = ['train', 'val', 'test']
+        existing_splits = []
+        
+        for split_name in required_splits:
+            split_path = os.path.join(data_path, split_name)
+            if os.path.exists(split_path) and os.path.isdir(split_path):
+                existing_splits.append(split_name)
+        
+        # Return True if at least 2 of the 3 splits exist (to be flexible)
+        return len(existing_splits) >= 2
+    
+    def _load_samples_from_directory(self, directory_path: str):
+        """Load samples from a specific directory."""
+        # Iterate through each subdirectory (sample)
+        for sample_dir in os.listdir(directory_path):
+            sample_dir_path = os.path.join(directory_path, sample_dir)
+            
+            if not os.path.isdir(sample_dir_path):
+                continue
+            
+            image_file = None
+            semantic_file = None
+            
+            # Find .png and .semantic files
+            for file in os.listdir(sample_dir_path):
+                # Skip macOS metadata files
+                if file.startswith("._"):
                     continue
                 
-                image_file = None
-                semantic_file = None
-                
-                # Find .png and .semantic files
-                for file in os.listdir(sample_dir_path):
-                    # Skip macOS metadata files
-                    if file.startswith("._"):
-                        continue
-                    
-                    if file.endswith(".png"):
-                        image_file = os.path.join(sample_dir_path, file)
-                    elif file.endswith(".semantic"):
-                        semantic_file = os.path.join(sample_dir_path, file)
-                
-                # Check if we have both image and labels
-                if image_file and semantic_file:
-                    self.data.append((image_file, semantic_file))
-                else:
-                    missing = []
-                    if not image_file:
-                        missing.append("image")
-                    if not semantic_file:
-                        missing.append("labels")
-                    logger.debug(f"Missing {', '.join(missing)} in {sample_dir_path}")
+                if file.endswith(".png"):
+                    image_file = os.path.join(sample_dir_path, file)
+                elif file.endswith(".semantic"):
+                    semantic_file = os.path.join(sample_dir_path, file)
+            
+            # Check if we have both image and labels
+            if image_file and semantic_file:
+                self.data.append((image_file, semantic_file))
+            else:
+                missing = []
+                if not image_file:
+                    missing.append("image")
+                if not semantic_file:
+                    missing.append("labels")
+                logger.debug(f"Missing {', '.join(missing)} in {sample_dir_path}")
     
     def __getitem__(self, index: int) -> Tuple[torch.Tensor, torch.Tensor]:
         """
@@ -284,3 +330,46 @@ def collate_fn(batch: List[Tuple[torch.Tensor, torch.Tensor]]) -> Tuple[torch.Te
     padded_labels = torch.stack(padded_labels)
     
     return padded_images, padded_labels
+
+
+def create_split_datasets(data_paths: Union[str, List[str]], 
+                         bekern_vocab_path: str,
+                         mapping_file_path: Optional[str] = None,
+                         transform: Optional[callable] = None) -> Tuple[UnifiedDataset, UnifiedDataset, UnifiedDataset]:
+    """
+    Create train, validation, and test datasets from parent directories.
+    
+    Args:
+        data_paths: Path(s) to parent directories containing train/val/test subdirectories
+        bekern_vocab_path: Path to BeKern vocabulary file (.npy format)
+        mapping_file_path: Path to Primus-to-BeKern mapping JSON file
+        transform: Optional image transforms to apply
+        
+    Returns:
+        Tuple of (train_dataset, val_dataset, test_dataset)
+    """
+    train_dataset = UnifiedDataset(
+        data_paths=data_paths,
+        bekern_vocab_path=bekern_vocab_path,
+        mapping_file_path=mapping_file_path,
+        transform=transform,
+        split='train'
+    )
+    
+    val_dataset = UnifiedDataset(
+        data_paths=data_paths,
+        bekern_vocab_path=bekern_vocab_path,
+        mapping_file_path=mapping_file_path,
+        transform=transform,
+        split='val'
+    )
+    
+    test_dataset = UnifiedDataset(
+        data_paths=data_paths,
+        bekern_vocab_path=bekern_vocab_path,
+        mapping_file_path=mapping_file_path,
+        transform=transform,
+        split='test'
+    )
+    
+    return train_dataset, val_dataset, test_dataset

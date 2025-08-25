@@ -18,14 +18,9 @@ In `scripts/download.py`, we provide a script to download all relevant datasets 
 
 #### Quick Start
 ```bash
-# Download Camera Primus dataset (required for training)
 python scripts/download.py --primus
 
-# Download SMT datasets for synthetic generation (optional)
-python scripts/download.py --smt grandstaff-ekern
-
-# Download everything
-python scripts/download.py --primus --smt-all
+python scripts/download.py --smt-all
 ```
 
 <details>
