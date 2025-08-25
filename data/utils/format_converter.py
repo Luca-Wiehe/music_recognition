@@ -156,6 +156,47 @@ def load_primus_labels_from_file(file_path: str) -> List[str]:
         logger.error(f"Error reading label file {file_path}: {e}")
         return []
 
+
+def load_bekern_labels_from_file(file_path: str) -> List[str]:
+    """
+    Load BeKern labels from a .semantic file.
+    
+    BeKern files have a different format - they start with **ekern_1.0 header
+    and contain tab-separated data organized in columns (staves).
+    
+    Args:
+        file_path: Path to the .semantic file
+        
+    Returns:
+        List of token strings
+    """
+    try:
+        with open(file_path, 'r') as f:
+            lines = f.readlines()
+            
+        tokens = []
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+                
+            # Skip header lines that start with **
+            if line.startswith('**'):
+                continue
+                
+            # Split by tabs and add all non-empty tokens
+            line_tokens = [token for token in line.split('\t') if token.strip()]
+            tokens.extend(line_tokens)
+            
+        return tokens
+        
+    except FileNotFoundError:
+        logger.error(f"BeKern label file not found: {file_path}")
+        return []
+    except Exception as e:
+        logger.error(f"Error reading BeKern label file {file_path}: {e}")
+        return []
+
 def example_usage():
     """Example of how to use the converter."""
     # Create converter

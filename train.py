@@ -79,6 +79,7 @@ def setup_data_loaders(config: dict, stage: int = None) -> tuple:
     
     # Extract data paths from new config format, filtering by stage if specified
     data_paths = []
+    dataset_formats = []
     primus_paths = []
     bekern_paths = []
     
@@ -93,6 +94,7 @@ def setup_data_loaders(config: dict, stage: int = None) -> tuple:
         # Stage 2 and None load all datasets
         
         data_paths.append(path)
+        dataset_formats.append(format_type)
         if format_type == 'primus':
             primus_paths.append(path)
         elif format_type == 'bekern':
@@ -110,7 +112,8 @@ def setup_data_loaders(config: dict, stage: int = None) -> tuple:
         data_paths=data_paths,
         bekern_vocab_path=data_config['bekern_vocabulary_path'],
         mapping_file_path=data_config.get('mapping_file_path'),
-        transform=None
+        transform=None,
+        dataset_formats=dataset_formats
     )
     
     print(f"Using automatic train/val/test splits:")

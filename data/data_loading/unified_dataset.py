@@ -12,7 +12,7 @@ from torchvision import transforms
 from PIL import Image
 import numpy as np
 
-from ..utils.format_converter import PrimusToBeKernConverter, load_primus_labels_from_file
+from ..utils.format_converter import PrimusToBeKernConverter, load_primus_labels_from_file, load_bekern_labels_from_file
 
 logger = logging.getLogger(__name__)
 
@@ -29,12 +29,13 @@ class UnifiedDataset(data.Dataset):
                  bekern_vocab_path: str,
                  mapping_file_path: Optional[str] = None,
                  transform: Optional[callable] = None,
-                 split: Optional[str] = None):
+                 split: Optional[str] = None,
+                 dataset_formats: Optional[Union[str, List[str]]] = None):
         """
         Initialize the UnifiedDataset.
         
         Args:
-            data_paths: Path(s) to directories containing Camera Primus data.
+            data_paths: Path(s) to directories containing music data.
                        Can be either parent directories (which will automatically
                        load from train/val/test subfolders) or specific subdirectories.
             bekern_vocab_path: Path to BeKern vocabulary file (.npy format)
@@ -42,6 +43,9 @@ class UnifiedDataset(data.Dataset):
             transform: Optional image transforms to apply
             split: Optional split name ('train', 'val', 'test'). If provided,
                   will load only from the specified split subdirectory.
+            dataset_formats: Format(s) for each dataset path ('primus' or 'bekern').
+                           If provided, must match the length of data_paths.
+                           If None, assumes all datasets are 'primus' (legacy behavior).
         """
         # Handle both single path and multiple paths
         if isinstance(data_paths, str):
@@ -49,12 +53,28 @@ class UnifiedDataset(data.Dataset):
         else:
             self.data_paths = data_paths
         
+        # Handle dataset formats
+        if dataset_formats is None:
+            # Legacy behavior: assume all datasets are primus
+            self.dataset_formats = ['primus'] * len(self.data_paths)
+        elif isinstance(dataset_formats, str):
+            self.dataset_formats = [dataset_formats]
+        else:
+            self.dataset_formats = dataset_formats
+            
+        # Validate that we have format info for each path
+        if len(self.dataset_formats) != len(self.data_paths):
+            raise ValueError(f"Number of dataset_formats ({len(self.dataset_formats)}) must match number of data_paths ({len(self.data_paths)})")
+        
         self.transform = transform
         self.split = split
-        self.data = []  # List of (image_path, labels_path) tuples
+        self.data = []  # List of (image_path, labels_path, format) tuples
         
-        # Initialize format converter
-        self.converter = PrimusToBeKernConverter(mapping_file_path)
+        # Initialize format converter (only needed for primus datasets)
+        if 'primus' in self.dataset_formats:
+            self.converter = PrimusToBeKernConverter(mapping_file_path)
+        else:
+            self.converter = None
         
         # Load BeKern vocabulary
         self.bekern_vocab_path = bekern_vocab_path
@@ -64,6 +84,7 @@ class UnifiedDataset(data.Dataset):
         self._load_data_samples()
         
         logger.info(f"Loaded {len(self.data)} samples from {len(self.data_paths)} directories")
+        logger.info(f"Dataset formats: {dict(zip(self.data_paths, self.dataset_formats))}")
         if self.split:
             logger.info(f"Using split: {self.split}")
         logger.info(f"BeKern vocabulary size: {len(self.vocabulary_to_index)}")
@@ -92,10 +113,14 @@ class UnifiedDataset(data.Dataset):
     
     def _load_data_samples(self):
         """Load all data samples from the specified directories."""
-        for data_path in self.data_paths:
+        for i, data_path in enumerate(self.data_paths):
+            dataset_format = self.dataset_formats[i]
+            
             if not os.path.exists(data_path):
                 logger.warning(f"Data path does not exist: {data_path}")
                 continue
+            
+            logger.info(f"Loading {dataset_format} format data from: {data_path}")
             
             # Check if this directory has train/val/test subdirectories
             has_split_subdirs = self._has_split_subdirectories(data_path)
@@ -105,7 +130,7 @@ class UnifiedDataset(data.Dataset):
                 split_path = os.path.join(data_path, self.split)
                 if os.path.exists(split_path):
                     logger.info(f"Loading {self.split} split from: {split_path}")
-                    self._load_samples_from_directory(split_path)
+                    self._load_samples_from_directory(split_path, dataset_format)
                 else:
                     logger.warning(f"Split directory does not exist: {split_path}")
             elif has_split_subdirs and not self.split:
@@ -114,11 +139,11 @@ class UnifiedDataset(data.Dataset):
                     split_path = os.path.join(data_path, split_name)
                     if os.path.exists(split_path):
                         logger.info(f"Loading {split_name} split from: {split_path}")
-                        self._load_samples_from_directory(split_path)
+                        self._load_samples_from_directory(split_path, dataset_format)
             else:
                 # Load directly from the provided directory (legacy behavior)
                 logger.info(f"Loading samples from: {data_path}")
-                self._load_samples_from_directory(data_path)
+                self._load_samples_from_directory(data_path, dataset_format)
     
     def _has_split_subdirectories(self, data_path: str) -> bool:
         """Check if a directory contains train/val/test subdirectories."""
@@ -133,7 +158,7 @@ class UnifiedDataset(data.Dataset):
         # Return True if at least 2 of the 3 splits exist (to be flexible)
         return len(existing_splits) >= 2
     
-    def _load_samples_from_directory(self, directory_path: str):
+    def _load_samples_from_directory(self, directory_path: str, dataset_format: str):
         """Load samples from a specific directory."""
         # Iterate through each subdirectory (sample)
         for sample_dir in os.listdir(directory_path):
@@ -158,7 +183,7 @@ class UnifiedDataset(data.Dataset):
             
             # Check if we have both image and labels
             if image_file and semantic_file:
-                self.data.append((image_file, semantic_file))
+                self.data.append((image_file, semantic_file, dataset_format))
             else:
                 missing = []
                 if not image_file:
@@ -177,13 +202,13 @@ class UnifiedDataset(data.Dataset):
         Returns:
             Tuple of (image_tensor, labels_tensor)
         """
-        image_path, labels_path = self.data[index]
+        image_path, labels_path, dataset_format = self.data[index]
         
         # Load and process image
         image = self._load_and_process_image(image_path)
         
-        # Load and convert labels
-        labels = self._load_and_convert_labels(labels_path)
+        # Load and convert labels based on dataset format
+        labels = self._load_and_convert_labels(labels_path, dataset_format)
         
         return image, labels
     
@@ -221,14 +246,19 @@ class UnifiedDataset(data.Dataset):
             # Return a dummy image tensor as fallback
             return torch.zeros(1, 128, 256)
     
-    def _load_and_convert_labels(self, labels_path: str) -> torch.Tensor:
-        """Load Camera Primus labels and convert to BeKern format."""
+    def _load_and_convert_labels(self, labels_path: str, dataset_format: str) -> torch.Tensor:
+        """Load labels and convert to BeKern format if necessary."""
         try:
-            # Load Primus tokens
-            primus_tokens = load_primus_labels_from_file(labels_path)
-            
-            # Convert to BeKern format
-            bekern_tokens = self.converter.convert_sequence_with_markers(primus_tokens)
+            if dataset_format == 'primus':
+                # Load Primus tokens and convert to BeKern
+                primus_tokens = load_primus_labels_from_file(labels_path)
+                bekern_tokens = self.converter.convert_sequence_with_markers(primus_tokens)
+            elif dataset_format == 'bekern':
+                # Load BeKern tokens directly (no conversion needed)
+                bekern_tokens = load_bekern_labels_from_file(labels_path)
+                logger.debug(f"Loaded BeKern tokens directly: {bekern_tokens[:10]}...")  # Log first 10 tokens
+            else:
+                raise ValueError(f"Unknown dataset format: {dataset_format}")
             
             # Convert to indices using BeKern vocabulary
             indices = []
@@ -267,20 +297,27 @@ class UnifiedDataset(data.Dataset):
         if index >= len(self.data):
             raise IndexError(f"Sample index {index} out of range")
         
-        image_path, labels_path = self.data[index]
+        image_path, labels_path, dataset_format = self.data[index]
         
-        # Load original labels for comparison
-        primus_tokens = load_primus_labels_from_file(labels_path)
-        bekern_tokens = self.converter.convert_sequence_with_markers(primus_tokens)
+        # Load original labels
+        original_tokens = load_primus_labels_from_file(labels_path)
+        
+        if dataset_format == 'primus':
+            # Convert for comparison
+            converted_tokens = self.converter.convert_sequence_with_markers(original_tokens)
+        else:
+            # Already in BeKern format
+            converted_tokens = original_tokens
         
         return {
             "index": index,
             "image_path": image_path,
             "labels_path": labels_path,
-            "original_tokens": primus_tokens,
-            "converted_tokens": bekern_tokens,
-            "num_original_tokens": len(primus_tokens),
-            "num_converted_tokens": len(bekern_tokens)
+            "dataset_format": dataset_format,
+            "original_tokens": original_tokens,
+            "converted_tokens": converted_tokens,
+            "num_original_tokens": len(original_tokens),
+            "num_converted_tokens": len(converted_tokens)
         }
 
 def collate_fn(batch: List[Tuple[torch.Tensor, torch.Tensor]]) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -335,7 +372,8 @@ def collate_fn(batch: List[Tuple[torch.Tensor, torch.Tensor]]) -> Tuple[torch.Te
 def create_split_datasets(data_paths: Union[str, List[str]], 
                          bekern_vocab_path: str,
                          mapping_file_path: Optional[str] = None,
-                         transform: Optional[callable] = None) -> Tuple[UnifiedDataset, UnifiedDataset, UnifiedDataset]:
+                         transform: Optional[callable] = None,
+                         dataset_formats: Optional[Union[str, List[str]]] = None) -> Tuple[UnifiedDataset, UnifiedDataset, UnifiedDataset]:
     """
     Create train, validation, and test datasets from parent directories.
     
@@ -344,6 +382,9 @@ def create_split_datasets(data_paths: Union[str, List[str]],
         bekern_vocab_path: Path to BeKern vocabulary file (.npy format)
         mapping_file_path: Path to Primus-to-BeKern mapping JSON file
         transform: Optional image transforms to apply
+        dataset_formats: Format(s) for each dataset path ('primus' or 'bekern').
+                        If provided, must match the length of data_paths.
+                        If None, assumes all datasets are 'primus' (legacy behavior).
         
     Returns:
         Tuple of (train_dataset, val_dataset, test_dataset)
@@ -353,7 +394,8 @@ def create_split_datasets(data_paths: Union[str, List[str]],
         bekern_vocab_path=bekern_vocab_path,
         mapping_file_path=mapping_file_path,
         transform=transform,
-        split='train'
+        split='train',
+        dataset_formats=dataset_formats
     )
     
     val_dataset = UnifiedDataset(
@@ -361,7 +403,8 @@ def create_split_datasets(data_paths: Union[str, List[str]],
         bekern_vocab_path=bekern_vocab_path,
         mapping_file_path=mapping_file_path,
         transform=transform,
-        split='val'
+        split='val',
+        dataset_formats=dataset_formats
     )
     
     test_dataset = UnifiedDataset(
@@ -369,7 +412,8 @@ def create_split_datasets(data_paths: Union[str, List[str]],
         bekern_vocab_path=bekern_vocab_path,
         mapping_file_path=mapping_file_path,
         transform=transform,
-        split='test'
+        split='test',
+        dataset_formats=dataset_formats
     )
     
     return train_dataset, val_dataset, test_dataset

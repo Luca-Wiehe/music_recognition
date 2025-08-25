@@ -24,6 +24,9 @@ data:
     #  full_page: false
     - path: "data/datasets/smt_datasets/camera-grandstaff"
       format: "bekern"
+      full_page: false
+    - path: "data/datasets/smt_datasets/fp-grandstaff"
+      format: "bekern"
       full_page: true
   
   # Vocabulary configuration
@@ -39,7 +42,7 @@ data:
 # Training configuration
 training:
   batch_size: 64
-  epochs: 200
+  epochs: 20
   
   # Optimizer settings
   optimizer:
@@ -71,7 +74,7 @@ training:
 # Logging configuration
 logging:
   use_wandb: true
-  verbose: false
+  verbose: true
   wandb:
     project: "music-recognition"
     run_name: "music-trocr-convnext-tiny"
