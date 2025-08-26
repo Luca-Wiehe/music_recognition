@@ -60,7 +60,7 @@ def load_model_and_vocab(ckpt_path: str, vocab_path: str = "data/FP_GrandStaff_B
         n_heads=8,
         n_decoder_layers=6,
         d_ff=2048,
-        max_seq_len=512,
+        max_seq_len=1512,
         dropout=0.1
     )
     

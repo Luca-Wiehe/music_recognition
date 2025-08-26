@@ -17,14 +17,9 @@ Architecture Requirements:
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import math
-import copy
-from typing import Optional, Tuple, Dict, Any
+from typing import Optional, Tuple, Dict
 
 from transformers import AutoModel, AutoConfig
-
-import data.data_loading.primus_dataset as data
-import utils.utils as utils
 
 
 class PositionalEncoding2D(nn.Module):
