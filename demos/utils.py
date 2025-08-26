@@ -52,9 +52,32 @@ def load_model_and_vocab(ckpt_path: str, vocab_path: str = "data/FP_GrandStaff_B
     vocab_dict, id_to_token = load_bekern_vocabulary(vocab_path)
     vocab_size = len(vocab_dict)
     
-    # Initialize model with same config as training
+    # Get special token IDs from BeKern vocabulary (verified from .npy file)
+    pad_token_id = vocab_dict.get('<pad>')  # Should be 0
+    bos_token_id = vocab_dict.get('<bos>')  # Should be 169
+    eos_token_id = vocab_dict.get('<eos>')  # Should be 72
+    
+    # Verify we found all special tokens
+    if pad_token_id is None or bos_token_id is None or eos_token_id is None:
+        raise ValueError(f"Missing special tokens in vocabulary: PAD={pad_token_id}, BOS={bos_token_id}, EOS={eos_token_id}")
+        
+    # Verify expected values
+    expected = {'<pad>': 0, '<bos>': 169, '<eos>': 72}
+    actual = {'<pad>': pad_token_id, '<bos>': bos_token_id, '<eos>': eos_token_id}
+    if actual != expected:
+        print(f"WARNING: Special token IDs differ from expected:")
+        for token in expected:
+            if actual[token] != expected[token]:
+                print(f"  {token}: expected {expected[token]}, got {actual[token]}")
+    
+    print(f"Special token IDs: PAD={pad_token_id}, BOS={bos_token_id}, EOS={eos_token_id}")
+    
+    # Initialize model with BeKern vocabulary token IDs
     model = MusicTrOCR(
         vocab_size=vocab_size,
+        pad_token_id=pad_token_id,
+        bos_token_id=bos_token_id,
+        eos_token_id=eos_token_id,
         vision_model_name="facebook/convnext-tiny-224",
         d_model=512,
         n_heads=8,
@@ -131,74 +154,53 @@ def preprocess_image(img_path: str, target_height: int = 128) -> torch.Tensor:
 def decode_bekern_prediction(token_ids: torch.Tensor, id_to_token: Dict, model: MusicTrOCR) -> str:
     """
     Decode model token predictions to bekern string.
+    Now simplified since model uses BeKern vocabulary directly.
     
     Args:
-        token_ids: Predicted token IDs from model
-        id_to_token: Token ID to string mapping
-        model: Model instance for vocabulary conversion
+        token_ids: Predicted token IDs from model (BeKern vocabulary IDs)
+        id_to_token: BeKern token ID to string mapping
+        model: Model instance (for special token IDs)
         
     Returns:
         Decoded bekern string
     """
-    print(f"\n=== DEBUGGING TOKEN DECODING ===")
-    print(f"Raw model tokens: {token_ids.squeeze().tolist()}")
-    
-    # Convert model tokens back to dataset vocabulary
-    dataset_tokens = model.decode_model_tokens_to_dataset(token_ids)
-    print(f"Dataset tokens after conversion: {dataset_tokens.squeeze().tolist()}")
-    
-    # Check what happens at each step
+    print(f"\n=== DECODING BEKERN TOKENS ===")
     raw_tokens = token_ids.squeeze().tolist()
-    dataset_tokens_list = dataset_tokens.squeeze().tolist()
+    print(f"Model output tokens: {raw_tokens}")
+    print(f"Model special tokens: BOS={model.START_TOKEN_ID}, EOS={model.END_TOKEN_ID}, PAD={model.PAD_TOKEN_ID}")
     
-    print(f"\nToken conversion analysis:")
-    print(f"Model vocab: PAD={model.PAD_TOKEN_ID}, START={model.START_TOKEN_ID}, END={model.END_TOKEN_ID}")
-    
-    # Show what tokens 0, 1, 2 actually map to in bekern vocabulary
-    print(f"BeKern vocab mapping for low IDs:")
-    for tid in [0, 1, 2, 104, 185, 276]:  # Check both model special tokens and actual bekern special tokens
-        if tid in id_to_token:
-            print(f"  Dataset ID {tid} -> '{id_to_token[tid]}'")
-    
-    # Convert to string tokens
+    # No conversion needed - model already uses BeKern vocabulary
     bekern_tokens = []
-    for i, (model_tok, dataset_tok) in enumerate(zip(raw_tokens, dataset_tokens_list)):
-        print(f"  Step {i}: model_token={model_tok} -> dataset_token={dataset_tok}", end="")
+    
+    for i, token_id in enumerate(raw_tokens):
+        print(f"  Step {i}: token_id={token_id}", end="")
         
-        # Skip model's internal special tokens, but process everything else
-        if model_tok == model.START_TOKEN_ID:
-            print(f" -> START_TOKEN (skipping)")
+        # Skip special tokens
+        if token_id == model.START_TOKEN_ID:
+            print(f" -> BOS (skipping)")
             continue
-        elif model_tok == model.PAD_TOKEN_ID:
-            print(f" -> PAD_TOKEN (skipping)")
+        elif token_id == model.END_TOKEN_ID:
+            print(f" -> EOS (stopping)")
+            break
+        elif token_id == model.PAD_TOKEN_ID:
+            print(f" -> PAD (skipping)")
             continue
-        elif dataset_tok in id_to_token:
-            token = id_to_token[dataset_tok]
-            print(f" -> '{token}'")
-            
-            # Stop at actual <eos> token, not model's END_TOKEN_ID
-            if token == '<eos>':
-                print(f"    Found actual <eos> token, stopping")
-                break
-            # Skip other special tokens but continue processing
-            elif token in ['<pad>', '<bos>']:
-                print(f"    Skipping special token")
-                continue
-            else:
-                bekern_tokens.append(token)
+        elif token_id in id_to_token:
+            token_str = id_to_token[token_id]
+            print(f" -> '{token_str}'")
+            bekern_tokens.append(token_str)
         else:
-            print(f" -> UNKNOWN_TOKEN_ID")
-            print(f"Warning: Unknown token ID {dataset_tok} (from model token {model_tok})")
+            print(f" -> UNKNOWN_TOKEN")
+            print(f"    Warning: Unknown token ID {token_id}")
     
     # Join tokens with spaces
     bekern_str = ' '.join(bekern_tokens)
     
     print(f"\nDecoding summary:")
-    print(f"  Total model tokens: {len(raw_tokens)}")
-    print(f"  Valid bekern tokens: {len(bekern_tokens)}")
-    print(f"  Final bekern string length: {len(bekern_str)} chars")
-    print(f"  Bekern preview: {bekern_str[:100]}...")
-    print(f"=== END DEBUG ===\n")
+    print(f"  Input tokens: {len(raw_tokens)}")
+    print(f"  Valid music tokens: {len(bekern_tokens)}")
+    print(f"  BeKern string: '{bekern_str[:100]}{'...' if len(bekern_str) > 100 else ''}'")
+    print(f"=== END DECODING ===\n")
     
     return bekern_str
 
@@ -411,12 +413,12 @@ def render_music_score(kern_str: str, output_path: Optional[str] = None) -> Opti
 
 def run_inference(model: MusicTrOCR, image_tensor: torch.Tensor, vocab_dict: Dict, max_length: int = 512) -> torch.Tensor:
     """
-    Run inference on preprocessed image with corrected END token detection.
+    Run inference on preprocessed image using BeKern vocabulary directly.
     
     Args:
-        model: Trained MusicTrOCR model
+        model: Trained MusicTrOCR model  
         image_tensor: Preprocessed image tensor
-        vocab_dict: BeKern vocabulary dictionary
+        vocab_dict: BeKern vocabulary dictionary (for reference)
         max_length: Maximum generation length
         
     Returns:
@@ -425,60 +427,20 @@ def run_inference(model: MusicTrOCR, image_tensor: torch.Tensor, vocab_dict: Dic
     device = next(model.parameters()).device
     image_tensor = image_tensor.to(device)
     
-    # Find the actual EOS token ID in model vocabulary space
-    bekern_eos_id = vocab_dict.get('<eos>', None)
-    if bekern_eos_id is not None:
-        # Convert bekern EOS ID to model vocabulary space
-        model_eos_id = bekern_eos_id + (model.FIRST_MUSIC_TOKEN_ID - 1)  # +2 offset
-        print(f"Corrected EOS: bekern_id={bekern_eos_id} -> model_id={model_eos_id}")
-    else:
-        model_eos_id = model.END_TOKEN_ID  # Fallback to original
-        print(f"Warning: <eos> not found in vocabulary, using model END_TOKEN_ID={model_eos_id}")
+    print(f"Running inference with BeKern vocabulary...")
+    print(f"Model special tokens: PAD={model.PAD_TOKEN_ID}, BOS={model.START_TOKEN_ID}, EOS={model.END_TOKEN_ID}")
     
-    print("Running inference with corrected generation logic...")
+    with torch.no_grad():
+        # Use the model's built-in generation method
+        predictions = model.generate(
+            image_tensor,
+            max_length=max_length,
+            temperature=1.0,
+            do_sample=False  # Greedy decoding
+        )
     
-    # Custom generation loop with correct END token detection
-    model.eval()
-    batch_size = image_tensor.shape[0]
-    
-    # Encode images once
-    memory = model.encode_image(image_tensor)
-    
-    # Initialize with start tokens  
-    sequences = torch.full((batch_size, 1), model.START_TOKEN_ID, device=device)
-    
-    # Generate tokens one by one
-    for step in range(max_length - 1):
-        # Create padding mask
-        tgt_key_padding_mask = torch.zeros(batch_size, sequences.shape[1], 
-                                         device=device, dtype=torch.bool)
-        
-        # Forward pass
-        logits = model.decoder(sequences, memory, tgt_key_padding_mask)
-        
-        # Get logits for the last position
-        next_token_logits = logits[:, -1, :] / 1.0  # temperature
-        
-        # Greedy decoding
-        next_tokens = torch.argmax(next_token_logits, dim=-1, keepdim=True)
-        
-        # Append to sequences
-        sequences = torch.cat([sequences, next_tokens], dim=1)
-        
-        print(f"Step {step}: Generated token {next_tokens.item()}")
-        
-        # Check for correct END token (not model.END_TOKEN_ID!)
-        if (next_tokens == model_eos_id).all():
-            print(f"Found actual EOS token {model_eos_id}, stopping generation")
-            break
-        
-        # Safety check - also stop on model's internal END_TOKEN_ID but warn
-        if (next_tokens == model.END_TOKEN_ID).all():
-            print(f"WARNING: Hit model END_TOKEN_ID {model.END_TOKEN_ID} (incorrect), stopping")
-            break
-    
-    print(f"Generated sequence length: {sequences.shape[1]} (including START token)")
-    return sequences
+    print(f"Generated sequence length: {predictions.shape[1]} (including BOS token)")
+    return predictions
 
 
 def visualize_results(original_img_path: str, rendered_score: Optional[np.ndarray], bekern_str: str):

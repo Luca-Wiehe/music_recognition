@@ -295,21 +295,16 @@ class MusicTrOCR(nn.Module):
     1. Vision encoder extracts spatial features from sheet music images
     2. Transformer decoder generates music tokens autoregressively with cross-attention
     
-    Special tokens:
-    - PAD_TOKEN_ID = 0 (padding)
-    - START_TOKEN_ID = 1 (sequence start) 
-    - END_TOKEN_ID = 2 (sequence end)
-    - First actual music token starts at ID = 3
+    Uses BeKern vocabulary directly without token shifting:
+    - Special token IDs (PAD, BOS, EOS) are passed from the BeKern vocabulary
+    - No artificial vocabulary offset - works directly with dataset token IDs
     """
-    
-    # Special token constants
-    PAD_TOKEN_ID = 0
-    START_TOKEN_ID = 1  
-    END_TOKEN_ID = 2
-    FIRST_MUSIC_TOKEN_ID = 3
     
     def __init__(self, 
                  vocab_size: int,
+                 pad_token_id: int,
+                 bos_token_id: int, 
+                 eos_token_id: int,
                  vision_model_name: str = "microsoft/convnext-tiny-224",
                  d_model: int = 512,
                  n_heads: int = 8, 
@@ -319,9 +314,11 @@ class MusicTrOCR(nn.Module):
                  dropout: float = 0.1):
         super().__init__()
         
-        # Adjust vocab_size to account for special tokens
-        self.original_vocab_size = vocab_size
-        self.vocab_size = vocab_size + self.FIRST_MUSIC_TOKEN_ID  # Add space for special tokens
+        # Use BeKern vocabulary token IDs directly (no shifts!)
+        self.PAD_TOKEN_ID = pad_token_id
+        self.START_TOKEN_ID = bos_token_id  
+        self.END_TOKEN_ID = eos_token_id
+        self.vocab_size = vocab_size
         self.d_model = d_model
         self.max_seq_len = max_seq_len
         
@@ -354,84 +351,55 @@ class MusicTrOCR(nn.Module):
     
     def decode_model_tokens_to_dataset(self, model_tokens: torch.Tensor) -> torch.Tensor:
         """
-        Convert model vocabulary tokens back to dataset vocabulary tokens.
+        No conversion needed - model uses BeKern vocabulary directly.
         
         Args:
-            model_tokens: Tensor with model vocabulary indices
+            model_tokens: Tensor with BeKern vocabulary indices
             
         Returns:
-            Dataset vocabulary indices (with special tokens removed)
+            Same tensor (no conversion needed)
         """
-        # Convert model tokens back to dataset tokens
-        # Model tokens 0,1,2 (PAD,START,END) -> special handling
-        # Model tokens 3,4,5,... -> dataset tokens 1,2,3,...
-        dataset_tokens = torch.where(
-            model_tokens < self.FIRST_MUSIC_TOKEN_ID,
-            model_tokens,  # Keep special tokens as-is for debugging
-            model_tokens - (self.FIRST_MUSIC_TOKEN_ID - 1)  # Shift music tokens back by -2
-        )
-        return dataset_tokens
+        return model_tokens
         
     def prepare_targets(self, targets: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Prepare target sequences for training with teacher forcing.
+        Uses BeKern vocabulary directly - no token shifting needed.
         
         Args:
-            targets: Original target token indices from dataset (B, seq_len)
-                    - 0: padding token
-                    - 1, 2, 3, ...: music vocabulary tokens (from semantic_labels.txt)
+            targets: BeKern token indices from dataset (B, seq_len)
+                    - PAD_TOKEN_ID: padding 
+                    - Other tokens: music vocabulary from BeKern
                     
         Returns:
-            decoder_input: Input to decoder (B, seq_len+1) starting with START token
-            decoder_target: Target for loss computation (B, seq_len+1) ending with END token
-                    
-        Vocabulary mapping:
-            Dataset -> Model
-            0 (padding) -> 0 (PAD_TOKEN_ID)
-            1, 2, 3, ... (music tokens) -> 3, 4, 5, ... (shifted by +2)
+            decoder_input: Input to decoder (B, seq_len+1) starting with BOS token
+            decoder_target: Target for loss computation (B, seq_len+1) ending with EOS token
         """
         batch_size, seq_len = targets.shape
         device = targets.device
         
-        # Shift dataset vocabulary to model vocabulary space
-        # Dataset tokens 1,2,3,... become model tokens 3,4,5,...
-        # Padding (0) remains padding (0)
-        targets_shifted = torch.where(targets == 0, 
-                                    self.PAD_TOKEN_ID,  # Keep padding as PAD_TOKEN_ID (0)
-                                    targets + (self.FIRST_MUSIC_TOKEN_ID - 1))  # Shift music tokens by +2
-        
-        # Create decoder input: [START] + targets_shifted
+        # No vocabulary shifting - use BeKern tokens directly
+        # Create decoder input: [BOS] + targets
         start_tokens = torch.full((batch_size, 1), self.START_TOKEN_ID, device=device)
-        decoder_input = torch.cat([start_tokens, targets_shifted], dim=1)
+        decoder_input = torch.cat([start_tokens, targets], dim=1)
         
-        # Create decoder target: targets_shifted + [END]
+        # Create decoder target: targets + [EOS]
         end_tokens = torch.full((batch_size, 1), self.END_TOKEN_ID, device=device)
-        decoder_target = torch.cat([targets_shifted, end_tokens], dim=1)
+        decoder_target = torch.cat([targets, end_tokens], dim=1)
         
-        # For each sequence, find where the actual sequence ends and place END token there
+        # For each sequence, find where the actual sequence ends and place EOS token there
         for i in range(batch_size):
-            # Find first padding position in original targets (this is where sequence ends)
-            padding_positions = (targets[i] == 0).nonzero(as_tuple=True)[0]
+            # Find first padding position in original targets
+            padding_positions = (targets[i] == self.PAD_TOKEN_ID).nonzero(as_tuple=True)[0]
             if len(padding_positions) > 0:
                 # Sequence ends at first padding position
                 seq_end_pos = padding_positions[0].item()
-                # Place END token at the end of the actual sequence in decoder_target
+                # Place EOS token at the end of the actual sequence in decoder_target
                 decoder_target[i, seq_end_pos] = self.END_TOKEN_ID
-                # Everything after END token should be PAD in both sequences
+                # Everything after EOS token should be PAD in both sequences
                 decoder_target[i, seq_end_pos+1:] = self.PAD_TOKEN_ID
                 decoder_input[i, seq_end_pos+1:] = self.PAD_TOKEN_ID
-            else:
-                # No padding found, sequence uses full length
-                # END token is already at the end, no changes needed
-                pass
         
-        # Debug print for first batch to verify mappings (uncomment for debugging)
-        # if torch.rand(1).item() < 0.1:  # Print 10% of batches
-        #     print(f"[DEBUG VOCAB] Original targets[0][:10]: {targets[0][:10].tolist()}")
-        #     print(f"[DEBUG VOCAB] Shifted targets[0][:10]: {targets_shifted[0][:10].tolist()}")
-        #     print(f"[DEBUG VOCAB] Decoder input[0][:11]: {decoder_input[0][:11].tolist()}")
-        #     print(f"[DEBUG VOCAB] Decoder target[0][:11]: {decoder_target[0][:11].tolist()}")
-                
         return decoder_input, decoder_target
     
     def forward(self, 
