@@ -140,25 +140,65 @@ def decode_bekern_prediction(token_ids: torch.Tensor, id_to_token: Dict, model: 
     Returns:
         Decoded bekern string
     """
+    print(f"\n=== DEBUGGING TOKEN DECODING ===")
+    print(f"Raw model tokens: {token_ids.squeeze().tolist()}")
+    
     # Convert model tokens back to dataset vocabulary
     dataset_tokens = model.decode_model_tokens_to_dataset(token_ids)
+    print(f"Dataset tokens after conversion: {dataset_tokens.squeeze().tolist()}")
+    
+    # Check what happens at each step
+    raw_tokens = token_ids.squeeze().tolist()
+    dataset_tokens_list = dataset_tokens.squeeze().tolist()
+    
+    print(f"\nToken conversion analysis:")
+    print(f"Model vocab: PAD={model.PAD_TOKEN_ID}, START={model.START_TOKEN_ID}, END={model.END_TOKEN_ID}")
+    
+    # Show what tokens 0, 1, 2 actually map to in bekern vocabulary
+    print(f"BeKern vocab mapping for low IDs:")
+    for tid in [0, 1, 2, 104, 185, 276]:  # Check both model special tokens and actual bekern special tokens
+        if tid in id_to_token:
+            print(f"  Dataset ID {tid} -> '{id_to_token[tid]}'")
     
     # Convert to string tokens
     bekern_tokens = []
-    for token_id in dataset_tokens.squeeze().tolist():
-        if token_id in id_to_token:
-            token = id_to_token[token_id]
-            # Skip special tokens for bekern output
-            if token not in ['<pad>', '<bos>', '<eos>']:
+    for i, (model_tok, dataset_tok) in enumerate(zip(raw_tokens, dataset_tokens_list)):
+        print(f"  Step {i}: model_token={model_tok} -> dataset_token={dataset_tok}", end="")
+        
+        # Skip model's internal special tokens, but process everything else
+        if model_tok == model.START_TOKEN_ID:
+            print(f" -> START_TOKEN (skipping)")
+            continue
+        elif model_tok == model.PAD_TOKEN_ID:
+            print(f" -> PAD_TOKEN (skipping)")
+            continue
+        elif dataset_tok in id_to_token:
+            token = id_to_token[dataset_tok]
+            print(f" -> '{token}'")
+            
+            # Stop at actual <eos> token, not model's END_TOKEN_ID
+            if token == '<eos>':
+                print(f"    Found actual <eos> token, stopping")
+                break
+            # Skip other special tokens but continue processing
+            elif token in ['<pad>', '<bos>']:
+                print(f"    Skipping special token")
+                continue
+            else:
                 bekern_tokens.append(token)
         else:
-            print(f"Warning: Unknown token ID {token_id}")
+            print(f" -> UNKNOWN_TOKEN_ID")
+            print(f"Warning: Unknown token ID {dataset_tok} (from model token {model_tok})")
     
     # Join tokens with spaces
     bekern_str = ' '.join(bekern_tokens)
     
-    print(f"Decoded {len(bekern_tokens)} tokens")
-    print(f"Bekern preview: {bekern_str[:100]}...")
+    print(f"\nDecoding summary:")
+    print(f"  Total model tokens: {len(raw_tokens)}")
+    print(f"  Valid bekern tokens: {len(bekern_tokens)}")
+    print(f"  Final bekern string length: {len(bekern_str)} chars")
+    print(f"  Bekern preview: {bekern_str[:100]}...")
+    print(f"=== END DEBUG ===\n")
     
     return bekern_str
 
@@ -369,13 +409,14 @@ def render_music_score(kern_str: str, output_path: Optional[str] = None) -> Opti
         return None
 
 
-def run_inference(model: MusicTrOCR, image_tensor: torch.Tensor, max_length: int = 512) -> torch.Tensor:
+def run_inference(model: MusicTrOCR, image_tensor: torch.Tensor, vocab_dict: Dict, max_length: int = 512) -> torch.Tensor:
     """
-    Run inference on preprocessed image.
+    Run inference on preprocessed image with corrected END token detection.
     
     Args:
         model: Trained MusicTrOCR model
         image_tensor: Preprocessed image tensor
+        vocab_dict: BeKern vocabulary dictionary
         max_length: Maximum generation length
         
     Returns:
@@ -384,18 +425,60 @@ def run_inference(model: MusicTrOCR, image_tensor: torch.Tensor, max_length: int
     device = next(model.parameters()).device
     image_tensor = image_tensor.to(device)
     
-    print("Running inference...")
-    with torch.no_grad():
-        # Generate predictions
-        predictions = model.generate(
-            image_tensor,
-            max_length=max_length,
-            temperature=1.0,
-            do_sample=False  # Greedy decoding
-        )
+    # Find the actual EOS token ID in model vocabulary space
+    bekern_eos_id = vocab_dict.get('<eos>', None)
+    if bekern_eos_id is not None:
+        # Convert bekern EOS ID to model vocabulary space
+        model_eos_id = bekern_eos_id + (model.FIRST_MUSIC_TOKEN_ID - 1)  # +2 offset
+        print(f"Corrected EOS: bekern_id={bekern_eos_id} -> model_id={model_eos_id}")
+    else:
+        model_eos_id = model.END_TOKEN_ID  # Fallback to original
+        print(f"Warning: <eos> not found in vocabulary, using model END_TOKEN_ID={model_eos_id}")
     
-    print(f"Generated sequence length: {predictions.shape[1]}")
-    return predictions
+    print("Running inference with corrected generation logic...")
+    
+    # Custom generation loop with correct END token detection
+    model.eval()
+    batch_size = image_tensor.shape[0]
+    
+    # Encode images once
+    memory = model.encode_image(image_tensor)
+    
+    # Initialize with start tokens  
+    sequences = torch.full((batch_size, 1), model.START_TOKEN_ID, device=device)
+    
+    # Generate tokens one by one
+    for step in range(max_length - 1):
+        # Create padding mask
+        tgt_key_padding_mask = torch.zeros(batch_size, sequences.shape[1], 
+                                         device=device, dtype=torch.bool)
+        
+        # Forward pass
+        logits = model.decoder(sequences, memory, tgt_key_padding_mask)
+        
+        # Get logits for the last position
+        next_token_logits = logits[:, -1, :] / 1.0  # temperature
+        
+        # Greedy decoding
+        next_tokens = torch.argmax(next_token_logits, dim=-1, keepdim=True)
+        
+        # Append to sequences
+        sequences = torch.cat([sequences, next_tokens], dim=1)
+        
+        print(f"Step {step}: Generated token {next_tokens.item()}")
+        
+        # Check for correct END token (not model.END_TOKEN_ID!)
+        if (next_tokens == model_eos_id).all():
+            print(f"Found actual EOS token {model_eos_id}, stopping generation")
+            break
+        
+        # Safety check - also stop on model's internal END_TOKEN_ID but warn
+        if (next_tokens == model.END_TOKEN_ID).all():
+            print(f"WARNING: Hit model END_TOKEN_ID {model.END_TOKEN_ID} (incorrect), stopping")
+            break
+    
+    print(f"Generated sequence length: {sequences.shape[1]} (including START token)")
+    return sequences
 
 
 def visualize_results(original_img_path: str, rendered_score: Optional[np.ndarray], bekern_str: str):
@@ -461,7 +544,7 @@ def demo_pipeline(img_path: str, ckpt_path: str, vocab_path: str = "data/FP_Gran
     
     # Step 3: Run inference
     print("\n3. Running inference...")
-    predictions = run_inference(model, image_tensor)
+    predictions = run_inference(model, image_tensor, vocab_dict)
     
     # Step 4: Decode predictions
     print("\n4. Decoding predictions...")
