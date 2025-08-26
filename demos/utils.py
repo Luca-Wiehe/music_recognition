@@ -166,6 +166,7 @@ def decode_bekern_prediction(token_ids: torch.Tensor, id_to_token: Dict, model: 
 def bekern_to_kern(bekern_str: str) -> str:
     """
     Convert bekern format to kern format for Verovio rendering.
+    Handles the flattened bekern sequence by parsing and reconstructing proper kern structure.
     
     Args:
         bekern_str: Bekern notation string
@@ -173,24 +174,101 @@ def bekern_to_kern(bekern_str: str) -> str:
     Returns:
         Kern format string
     """
-    # Replace bekern special tokens with kern equivalents
+    # First, replace bekern special tokens
     kern_str = bekern_str.replace('<b>', '\n')
     kern_str = kern_str.replace('<s>', ' ')  
     kern_str = kern_str.replace('<t>', '\t')
     
-    # Clean up extra spaces and newlines
-    lines = [line.strip() for line in kern_str.split('\n') if line.strip()]
-    kern_str = '\n'.join(lines)
+    # Split into tokens for analysis
+    tokens = bekern_str.split()
     
-    # Add kern header if not present
-    if not kern_str.startswith('**kern'):
-        kern_str = '**kern\t**kern\n' + kern_str
+    # Separate metadata from music content
+    metadata_tokens = []
+    music_tokens = []
+    
+    for token in tokens:
+        if token.startswith('*') and not token in ['*-']:
+            metadata_tokens.append(token)
+        elif token not in ['<b>', '<s>', '<t>', '<bos>', '<eos>', '<pad>']:
+            music_tokens.append(token)
+    
+    # Build proper kern structure
+    kern_lines = []
+    
+    # Add header
+    kern_lines.append('**kern\t**kern')
+    
+    # Add metadata (clef, key, meter) - assuming two parts
+    clef_tokens = [t for t in metadata_tokens if t.startswith('*clef')]
+    key_tokens = [t for t in metadata_tokens if t.startswith('*k')]
+    meter_tokens = [t for t in metadata_tokens if t.startswith('*M')]
+    met_tokens = [t for t in metadata_tokens if t.startswith('*met')]
+    
+    # Add clefs
+    if clef_tokens:
+        if len(clef_tokens) >= 2:
+            kern_lines.append(f'{clef_tokens[0]}\t{clef_tokens[1]}')
+        else:
+            kern_lines.append(f'{clef_tokens[0]}\t{clef_tokens[0]}')
+    
+    # Add key signatures
+    if key_tokens:
+        if len(key_tokens) >= 2:
+            kern_lines.append(f'{key_tokens[0]}\t{key_tokens[1]}')
+        else:
+            kern_lines.append(f'{key_tokens[0]}\t{key_tokens[0]}')
+    
+    # Add time signatures
+    if meter_tokens:
+        if len(meter_tokens) >= 2:
+            kern_lines.append(f'{meter_tokens[0]}\t{meter_tokens[1]}')
+        else:
+            kern_lines.append(f'{meter_tokens[0]}\t{meter_tokens[0]}')
+    
+    # Add meter markings
+    if met_tokens:
+        if len(met_tokens) >= 2:
+            kern_lines.append(f'{met_tokens[0]}\t{met_tokens[1]}')
+        else:
+            kern_lines.append(f'{met_tokens[0]}\t{met_tokens[0]}')
+    
+    # Add music content - group tokens in pairs for two parts
+    if music_tokens:
+        # Simple approach: alternate tokens between left and right hand
+        left_hand = []
+        right_hand = []
+        
+        for i, token in enumerate(music_tokens):
+            if i % 2 == 0:
+                left_hand.append(token)
+            else:
+                right_hand.append(token)
+        
+        # Pad shorter voice with rests
+        max_len = max(len(left_hand), len(right_hand))
+        while len(left_hand) < max_len:
+            left_hand.append('r')
+        while len(right_hand) < max_len:
+            right_hand.append('r')
+        
+        # Add paired music lines
+        for left, right in zip(left_hand, right_hand):
+            kern_lines.append(f'{left}\t{right}')
     
     # Add ending marker
-    if not kern_str.endswith('*-'):
-        kern_str += '\n*-\t*-'
+    kern_lines.append('*-\t*-')
     
-    return kern_str
+    result = '\n'.join(kern_lines)
+    
+    # Debug output
+    print("Parsed tokens:")
+    print(f"  Metadata: {metadata_tokens}")
+    print(f"  Music: {music_tokens}")
+    print("Generated Kern structure:")
+    for i, line in enumerate(kern_lines[:5]):
+        print(f"  {i+1}: {repr(line)}")
+    
+    return result
 
 
 def render_music_score(kern_str: str, output_path: Optional[str] = None) -> Optional[np.ndarray]:
@@ -222,9 +300,38 @@ def render_music_score(kern_str: str, output_path: Optional[str] = None) -> Opti
             "adjustPageHeight": True
         })
         
+        # Debug: print kern string for analysis
+        print("Kern string to be rendered:")
+        print("-" * 40)
+        print(kern_str)
+        print("-" * 40)
+        
+        # Validate kern format before loading
+        if not kern_str.strip():
+            print("Error: Empty kern string")
+            return None
+        
+        if not '**kern' in kern_str:
+            print("Error: Invalid kern format - missing **kern header")
+            return None
+        
         # Load data and render
-        tk.loadData(kern_str)
-        svg = tk.renderToSVG()
+        try:
+            tk.loadData(kern_str)
+        except Exception as load_error:
+            print(f"Error loading kern data into Verovio: {load_error}")
+            print("This usually indicates invalid kern syntax")
+            return None
+        
+        try:
+            svg = tk.renderToSVG()
+        except Exception as render_error:
+            print(f"Error rendering to SVG: {render_error}")
+            return None
+        
+        if not svg or len(svg.strip()) == 0:
+            print("Error: Verovio returned empty SVG")
+            return None
         
         # Convert SVG to PNG using cairosvg
         try:
@@ -233,6 +340,11 @@ def render_music_score(kern_str: str, output_path: Optional[str] = None) -> Opti
             
             # Convert to numpy array
             image_array = cv2.imdecode(np.frombuffer(png_data, np.uint8), -1)
+            
+            if image_array is None:
+                print("Error: Failed to decode PNG data")
+                return None
+                
             image_array = cv2.cvtColor(image_array, cv2.COLOR_BGR2RGB)
             
             # Save if path provided
@@ -240,14 +352,20 @@ def render_music_score(kern_str: str, output_path: Optional[str] = None) -> Opti
                 cv2.imwrite(output_path, cv2.cvtColor(image_array, cv2.COLOR_RGB2BGR))
                 print(f"Rendered score saved to: {output_path}")
             
+            print("✅ Music score rendered successfully")
             return image_array
             
         except ImportError:
             print("cairosvg not available. Cannot convert SVG to PNG.")
             return None
+        except Exception as svg_error:
+            print(f"Error converting SVG to PNG: {svg_error}")
+            return None
             
     except Exception as e:
-        print(f"Error rendering music score: {e}")
+        print(f"Unexpected error rendering music score: {e}")
+        import traceback
+        traceback.print_exc()
         return None
 
 
