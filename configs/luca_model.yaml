@@ -12,7 +12,7 @@ model:
     n_heads: 8               # Number of attention heads
     n_decoder_layers: 6      # Number of decoder layers
     d_ff: 2048              # Feed-forward dimension
-    max_seq_len: 1512        # Maximum sequence length (increased to handle longer sequences)
+    max_seq_len: 4353       # Maximum sequence length (increased to handle longer sequences)
     dropout: 0.1            # Dropout rate
 
 # Data configuration
@@ -41,7 +41,7 @@ data:
 
 # Training configuration
 training:
-  batch_size: 32
+  batch_size: 16
   epochs: 100
   
   # Optimizer settings
@@ -63,7 +63,7 @@ training:
     eps: 0.00000001
   
   # Early stopping
-  early_stop_patience: 15
+  early_stop_patience: 6
   
   # Gradient clipping
   grad_clip_norm: 1.0
