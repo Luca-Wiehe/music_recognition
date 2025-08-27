@@ -44,14 +44,37 @@ def load_config(config_path: str) -> dict:
     return config
 
 
-def create_model(config: dict, vocab_size: int) -> torch.nn.Module:
+def create_model(config: dict, vocab_size: int, vocab_to_index: dict = None) -> torch.nn.Module:
     """Create model based on configuration"""
     model_type = config['model']['type']
     model_params = config['model']['params']
     
     if model_type == 'MusicTrOCR':
+        # Extract special token IDs from vocabulary
+        if vocab_to_index is None:
+            # Load vocabulary directly if not provided
+            import numpy as np
+            bekern_vocab_path = config['data']['bekern_vocabulary_path']
+            vocab_data = np.load(bekern_vocab_path, allow_pickle=True).item()
+            vocab_to_index = vocab_data if isinstance(vocab_data, dict) else {}
+        
+        # Get special token IDs (verified from BeKern vocabulary structure)
+        pad_token_id = vocab_to_index.get('<pad>')
+        bos_token_id = vocab_to_index.get('<bos>')  
+        eos_token_id = vocab_to_index.get('<eos>')
+        
+        # Verify we found all required special tokens
+        if pad_token_id is None or bos_token_id is None or eos_token_id is None:
+            raise ValueError(f"Missing special tokens in BeKern vocabulary: "
+                           f"<pad>={pad_token_id}, <bos>={bos_token_id}, <eos>={eos_token_id}")
+        
+        print(f"BeKern special tokens: PAD={pad_token_id}, BOS={bos_token_id}, EOS={eos_token_id}")
+        
         model = MusicTrOCR(
             vocab_size=vocab_size,
+            pad_token_id=pad_token_id,
+            bos_token_id=bos_token_id,
+            eos_token_id=eos_token_id,
             **model_params
         )
     elif model_type == 'MonophonicModel':
@@ -410,11 +433,12 @@ def train_stage(config: dict, stage: int, resume_path: str = None, stage1_checkp
         print("  3. Mapping file exists and contains valid mappings")
         raise
     
-    # Create model
-    model = create_model(config, vocab_size)
+    # Create model with vocabulary for special token extraction
+    vocab_to_index = train_loader.dataset.vocabulary_to_index
+    model = create_model(config, vocab_size, vocab_to_index)
     
     model.index_to_vocabulary = train_loader.dataset.index_to_vocabulary
-    model.vocabulary_to_index = train_loader.dataset.vocabulary_to_index
+    model.vocabulary_to_index = vocab_to_index
     
     model.to(device)
 
