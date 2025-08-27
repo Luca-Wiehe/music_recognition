@@ -260,9 +260,13 @@ class UnifiedDataset(data.Dataset):
             else:
                 raise ValueError(f"Unknown dataset format: {dataset_format}")
             
+            # Add BOS and EOS tokens like SMT does (following SMT's prepare_fp_data approach)
+            # SMT: sample["transcription"] = ['<bos>'] + parse_kern(...) + ['<eos>']
+            bekern_tokens_with_markers = ['<bos>'] + bekern_tokens + ['<eos>']
+            
             # Convert to indices using BeKern vocabulary
             indices = []
-            for token in bekern_tokens:
+            for token in bekern_tokens_with_markers:
                 if token in self.vocabulary_to_index:
                     indices.append(self.vocabulary_to_index[token])
                 else:

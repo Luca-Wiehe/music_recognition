@@ -364,41 +364,26 @@ class MusicTrOCR(nn.Module):
     def prepare_targets(self, targets: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Prepare target sequences for training with teacher forcing.
-        Uses BeKern vocabulary directly - no token shifting needed.
+        Handles sequences that already have BOS/EOS tokens (SMT-style).
         
         Args:
             targets: BeKern token indices from dataset (B, seq_len)
+                    - Already includes BOS at start and EOS at end (SMT format)
                     - PAD_TOKEN_ID: padding 
-                    - Other tokens: music vocabulary from BeKern
                     
         Returns:
-            decoder_input: Input to decoder (B, seq_len+1) starting with BOS token
-            decoder_target: Target for loss computation (B, seq_len+1) ending with EOS token
+            decoder_input: Input to decoder - targets without last token
+            decoder_target: Target for loss computation - targets without first token
         """
         batch_size, seq_len = targets.shape
         device = targets.device
         
-        # No vocabulary shifting - use BeKern tokens directly
-        # Create decoder input: [BOS] + targets
-        start_tokens = torch.full((batch_size, 1), self.START_TOKEN_ID, device=device)
-        decoder_input = torch.cat([start_tokens, targets], dim=1)
+        # SMT-style: targets already have [BOS, token1, token2, ..., tokenN, EOS]
+        # decoder_input: [BOS, token1, token2, ..., tokenN] (all but last)
+        # decoder_target: [token1, token2, ..., tokenN, EOS] (all but first)
         
-        # Create decoder target: targets + [EOS]
-        end_tokens = torch.full((batch_size, 1), self.END_TOKEN_ID, device=device)
-        decoder_target = torch.cat([targets, end_tokens], dim=1)
-        
-        # For each sequence, find where the actual sequence ends and place EOS token there
-        for i in range(batch_size):
-            # Find first padding position in original targets
-            padding_positions = (targets[i] == self.PAD_TOKEN_ID).nonzero(as_tuple=True)[0]
-            if len(padding_positions) > 0:
-                # Sequence ends at first padding position
-                seq_end_pos = padding_positions[0].item()
-                # Place EOS token at the end of the actual sequence in decoder_target
-                decoder_target[i, seq_end_pos] = self.END_TOKEN_ID
-                # Everything after EOS token should be PAD in both sequences
-                decoder_target[i, seq_end_pos+1:] = self.PAD_TOKEN_ID
-                decoder_input[i, seq_end_pos+1:] = self.PAD_TOKEN_ID
+        decoder_input = targets[:, :-1]  # Remove last token (EOS for input)
+        decoder_target = targets[:, 1:]  # Remove first token (BOS for target)
         
         return decoder_input, decoder_target
     

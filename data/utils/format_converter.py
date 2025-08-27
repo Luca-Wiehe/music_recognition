@@ -159,35 +159,25 @@ def load_primus_labels_from_file(file_path: str) -> List[str]:
 
 def load_bekern_labels_from_file(file_path: str) -> List[str]:
     """
-    Load BeKern labels from a .semantic file.
+    Load BeKern labels from a .semantic file using SMT-compatible parsing.
     
-    BeKern files have a different format - they start with **ekern_1.0 header
-    and contain tab-separated data organized in columns (staves).
+    BeKern files are processed exactly like SMT does it to ensure vocabulary compatibility.
+    This includes proper tokenization with structural separators (<t>, <b>, <s>).
     
     Args:
         file_path: Path to the .semantic file
         
     Returns:
-        List of token strings
+        List of token strings compatible with BeKern vocabulary
     """
     try:
+        # Read the full file content
         with open(file_path, 'r') as f:
-            lines = f.readlines()
-            
-        tokens = []
-        for line in lines:
-            line = line.strip()
-            if not line:
-                continue
-                
-            # Skip header lines that start with **
-            if line.startswith('**'):
-                continue
-                
-            # Split by tabs and add all non-empty tokens
-            line_tokens = [token for token in line.split('\t') if token.strip()]
-            tokens.extend(line_tokens)
-            
+            content = f.read()
+        
+        # Apply SMT-style parsing (adapted from third_party/SMT/utils.py)
+        tokens = _parse_bekern_content(content)
+        
         return tokens
         
     except FileNotFoundError:
@@ -196,6 +186,70 @@ def load_bekern_labels_from_file(file_path: str) -> List[str]:
     except Exception as e:
         logger.error(f"Error reading BeKern label file {file_path}: {e}")
         return []
+
+
+def _parse_bekern_content(content: str) -> List[str]:
+    """
+    Parse bekern content using SMT-compatible logic.
+    Adapted from third_party/SMT/utils.py parse_kern function.
+    
+    Args:
+        content: Raw bekern file content
+        
+    Returns:
+        List of parsed tokens
+    """
+    import re
+    
+    # Step 1: Clean the content (adapted from SMT's clean_kern)
+    lines = content.split('\n')
+    cleaned_lines = []
+    avoid_tokens = ['*Xped', '*staff1', '*staff2', '*tremolo', '*ped', '*Xtuplet', '*tuplet', 
+                   "*Xtremolo", '*cue', '*Xcue', '*rscale:1/2', '*rscale:1', '*kcancel', '*below']
+    
+    for line in lines:
+        # Skip lines containing avoid tokens
+        if not any(token in line.split('\t') for token in avoid_tokens):
+            # Skip lines with only '*' tokens
+            if not all(token == '*' for token in line.split('\t')):
+                cleaned_lines.append(line.replace("\n", ""))
+    
+    krn = "\n".join(cleaned_lines)
+    
+    # Step 2: Remove measure numbers (e.g., =1, =25 becomes =)
+    krn = re.sub(r'(?<=\=)\d+', '', krn)
+    
+    # Step 3: Replace structural elements with tokens (SMT bekern format)
+    krn = krn.replace(" ", " <s> ")    # Space becomes <s>
+    krn = krn.replace("\t", " <t> ")   # Tab becomes <t>  
+    krn = krn.replace("\n", " <b> ")   # Newline becomes <b>
+    
+    # Step 4: Clean up specific patterns
+    krn = krn.replace("·/", "")
+    krn = krn.replace("·\\", "")
+    
+    # Step 5: BeKern format specific processing
+    krn = krn.replace("·", " ")        # Dots become spaces
+    krn = krn.replace("@", " ")        # @ symbols become spaces
+    
+    # Step 6: Split into tokens and clean up
+    tokens = krn.strip().split(" ")
+    tokens = [token for token in tokens if token.strip()]  # Remove empty tokens
+    
+    # Step 7: Skip the header tokens (first few **kern/**ekern/**bekern tokens)
+    # Find where actual music content starts (after headers)
+    header_count = 0
+    for i, token in enumerate(tokens):
+        if token.startswith('**'):
+            header_count += 1
+        else:
+            break
+    
+    # Skip header tokens (typically 2-4 tokens like **kern **kern)
+    if header_count > 0:
+        tokens = tokens[header_count:]
+    
+    return tokens
 
 def example_usage():
     """Example of how to use the converter."""

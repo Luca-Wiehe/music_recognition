@@ -170,12 +170,13 @@ def decode_bekern_prediction(token_ids: torch.Tensor, id_to_token: Dict, model: 
     print(f"Model special tokens: BOS={model.START_TOKEN_ID}, EOS={model.END_TOKEN_ID}, PAD={model.PAD_TOKEN_ID}")
     
     # No conversion needed - model already uses BeKern vocabulary
+    # Sequences from generation include BOS at start, so we need to handle that
     bekern_tokens = []
     
     for i, token_id in enumerate(raw_tokens):
         print(f"  Step {i}: token_id={token_id}", end="")
         
-        # Skip special tokens
+        # Skip special tokens (BOS at start, EOS/PAD for stopping)
         if token_id == model.START_TOKEN_ID:
             print(f" -> BOS (skipping)")
             continue
@@ -188,7 +189,9 @@ def decode_bekern_prediction(token_ids: torch.Tensor, id_to_token: Dict, model: 
         elif token_id in id_to_token:
             token_str = id_to_token[token_id]
             print(f" -> '{token_str}'")
-            bekern_tokens.append(token_str)
+            # Skip dataset-level special tokens (these are structural, not music content)
+            if token_str not in ['<bos>', '<eos>', '<pad>']:
+                bekern_tokens.append(token_str)
         else:
             print(f" -> UNKNOWN_TOKEN")
             print(f"    Warning: Unknown token ID {token_id}")
