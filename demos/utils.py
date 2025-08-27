@@ -210,110 +210,33 @@ def decode_bekern_prediction(token_ids: torch.Tensor, id_to_token: Dict, model: 
 
 def bekern_to_kern(bekern_str: str) -> str:
     """
-    Convert bekern format to kern format for Verovio rendering.
-    Handles the flattened bekern sequence by parsing and reconstructing proper kern structure.
+    Convert bekern/ekern format to kern format using SMT's exact conversion approach.
+    This matches the conversion used in third_party/SMT/SynthGenerator.py
     
     Args:
-        bekern_str: Bekern notation string
+        bekern_str: Bekern/ekern notation string 
         
     Returns:
-        Kern format string
+        Standard kern format string for Verovio rendering
     """
-    # First, replace bekern special tokens
+    # Apply SMT's exact conversion approach from SynthGenerator.py lines 175-176, 223-224
+    # Convert structural tokens back to their actual characters
     kern_str = bekern_str.replace('<b>', '\n')
-    kern_str = kern_str.replace('<s>', ' ')  
+    kern_str = kern_str.replace('<s>', ' ')
     kern_str = kern_str.replace('<t>', '\t')
     
-    # Split into tokens for analysis
-    tokens = bekern_str.split()
+    # Remove bekern-specific symbols (following SMT's approach)
+    kern_str = kern_str.replace('@', '')   # Remove @ symbols
+    kern_str = kern_str.replace('·', '')   # Remove middle dots (key fix!)
     
-    # Separate metadata from music content
-    metadata_tokens = []
-    music_tokens = []
+    # Ensure we have proper kern header if input has **ekern
+    if '**ekern' in kern_str:
+        kern_str = kern_str.replace('**ekern', '**kern')
+    elif not kern_str.startswith('**kern'):
+        # Add kern header if missing
+        kern_str = '**kern\t**kern\n' + kern_str
     
-    for token in tokens:
-        if token.startswith('*') and not token in ['*-']:
-            metadata_tokens.append(token)
-        elif token not in ['<b>', '<s>', '<t>', '<bos>', '<eos>', '<pad>']:
-            music_tokens.append(token)
-    
-    # Build proper kern structure
-    kern_lines = []
-    
-    # Add header
-    kern_lines.append('**kern\t**kern')
-    
-    # Add metadata (clef, key, meter) - assuming two parts
-    clef_tokens = [t for t in metadata_tokens if t.startswith('*clef')]
-    key_tokens = [t for t in metadata_tokens if t.startswith('*k')]
-    meter_tokens = [t for t in metadata_tokens if t.startswith('*M')]
-    met_tokens = [t for t in metadata_tokens if t.startswith('*met')]
-    
-    # Add clefs
-    if clef_tokens:
-        if len(clef_tokens) >= 2:
-            kern_lines.append(f'{clef_tokens[0]}\t{clef_tokens[1]}')
-        else:
-            kern_lines.append(f'{clef_tokens[0]}\t{clef_tokens[0]}')
-    
-    # Add key signatures
-    if key_tokens:
-        if len(key_tokens) >= 2:
-            kern_lines.append(f'{key_tokens[0]}\t{key_tokens[1]}')
-        else:
-            kern_lines.append(f'{key_tokens[0]}\t{key_tokens[0]}')
-    
-    # Add time signatures
-    if meter_tokens:
-        if len(meter_tokens) >= 2:
-            kern_lines.append(f'{meter_tokens[0]}\t{meter_tokens[1]}')
-        else:
-            kern_lines.append(f'{meter_tokens[0]}\t{meter_tokens[0]}')
-    
-    # Add meter markings
-    if met_tokens:
-        if len(met_tokens) >= 2:
-            kern_lines.append(f'{met_tokens[0]}\t{met_tokens[1]}')
-        else:
-            kern_lines.append(f'{met_tokens[0]}\t{met_tokens[0]}')
-    
-    # Add music content - group tokens in pairs for two parts
-    if music_tokens:
-        # Simple approach: alternate tokens between left and right hand
-        left_hand = []
-        right_hand = []
-        
-        for i, token in enumerate(music_tokens):
-            if i % 2 == 0:
-                left_hand.append(token)
-            else:
-                right_hand.append(token)
-        
-        # Pad shorter voice with rests
-        max_len = max(len(left_hand), len(right_hand))
-        while len(left_hand) < max_len:
-            left_hand.append('r')
-        while len(right_hand) < max_len:
-            right_hand.append('r')
-        
-        # Add paired music lines
-        for left, right in zip(left_hand, right_hand):
-            kern_lines.append(f'{left}\t{right}')
-    
-    # Add ending marker
-    kern_lines.append('*-\t*-')
-    
-    result = '\n'.join(kern_lines)
-    
-    # Debug output
-    print("Parsed tokens:")
-    print(f"  Metadata: {metadata_tokens}")
-    print(f"  Music: {music_tokens}")
-    print("Generated Kern structure:")
-    for i, line in enumerate(kern_lines[:5]):
-        print(f"  {i+1}: {repr(line)}")
-    
-    return result
+    return kern_str
 
 
 def render_music_score(kern_str: str, output_path: Optional[str] = None) -> Optional[np.ndarray]:
