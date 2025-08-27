@@ -3,7 +3,9 @@
     "allow": [
       "Bash(find:*)",
       "Bash(mv:*)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "WebFetch(domain:book.verovio.org)",
+      "WebFetch(domain:github.com)"
     ],
     "deny": []
   }
