@@ -508,9 +508,9 @@ class MusicTrOCR(nn.Module):
         logits = outputs['logits']  # (B, seq_len, vocab_size)
         decoder_target = outputs['decoder_target']  # (B, seq_len)
         
-        # Reshape for loss computation
-        logits_flat = logits.view(-1, self.vocab_size)  # (B*seq_len, vocab_size)
-        targets_flat = decoder_target.view(-1)  # (B*seq_len,)
+        # Reshape for loss computation (ensure contiguity for sliced tensors)
+        logits_flat = logits.contiguous().view(-1, self.vocab_size)  # (B*seq_len, vocab_size)
+        targets_flat = decoder_target.contiguous().view(-1)  # (B*seq_len,)
         
         # Compute loss (ignore padding tokens)
         loss = F.cross_entropy(logits_flat, targets_flat, ignore_index=self.PAD_TOKEN_ID)
@@ -560,8 +560,8 @@ class MusicTrOCR(nn.Module):
             logits = outputs['logits']
             decoder_target = outputs['decoder_target']
             
-            logits_flat = logits.view(-1, self.vocab_size)
-            targets_flat = decoder_target.view(-1)
+            logits_flat = logits.contiguous().view(-1, self.vocab_size)
+            targets_flat = decoder_target.contiguous().view(-1)
             
             loss = F.cross_entropy(logits_flat, targets_flat, ignore_index=self.PAD_TOKEN_ID)
             
