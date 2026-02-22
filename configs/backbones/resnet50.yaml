@@ -1,0 +1,50 @@
+# ResNet-50 backbone (25M encoder params)
+# Usage: python -m src.train --config configs/backbones/resnet50.yaml
+
+model:
+  type: "MusicTrOCR"
+  params:
+    vision_model_name: "microsoft/resnet-50"
+    d_model: 512
+    n_heads: 8
+    n_decoder_layers: 6
+    d_ff: 2048
+    max_seq_len: 2048
+    dropout: 0.1
+
+data:
+  dataset_id: "guangyangmusic/PDMX-Synth"
+  tokenizer_id: "guangyangmusic/legato"
+  img_height: 224
+  num_workers: 1
+  pin_memory: true
+
+training:
+  batch_size: 8
+  gradient_accumulation_steps: 4
+  epochs: 10
+  optimizer:
+    type: "AdamW"
+    learning_rate: 0.0003
+    weight_decay: 0.01
+    betas: [0.9, 0.99]
+    eps: 0.000001
+  scheduler:
+    type: "LinearWarmup"
+    warmup_ratio: 0.03
+  early_stop_patience: 6
+  grad_clip_norm: 1.0
+  checkpoint_dir: "networks/checkpoints/resnet50"
+
+logging:
+  use_wandb: true
+  verbose: false
+  wandb:
+    project: "music-recognition"
+    run_name: "backbone-resnet50"
+    tags: ["backbone-sweep", "resnet50", "omr"]
+    notes: "Backbone sweep: ResNet-50 (25M params)"
+
+hardware:
+  device: "auto"
+  mixed_precision: true

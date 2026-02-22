@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Download script for datasets used in the music recognition project.
-Handles both Camera Primus dataset and SMT HuggingFace datasets.
+Handles Camera Primus, SMT HuggingFace datasets, and PDMX-Synth.
 """
 
 import os
@@ -38,6 +38,14 @@ SMT_DATASETS = {
         "description": "Polish Scores dataset",
         "format": "original"
     }
+}
+
+# PDMX-Synth dataset from HuggingFace (large-scale OMR with ABC notation labels)
+PDMX_SYNTH_DATASET = {
+    "id": "guangyangmusic/PDMX-Synth",
+    "description": "PDMX-Synth: 216K image-ABC pairs rendered from public domain MusicXML scores (CC-BY-4.0)",
+    "output_dir": "data/datasets/pdmx-synth",
+    "splits": {"train": 214547, "val": 800, "test": 800},
 }
 
 # Camera Primus dataset info
@@ -175,6 +183,89 @@ def _split_primus_dataset(primus_dir: Path):
     
     print("Primus dataset split completed successfully")
     return True
+
+
+def download_pdmx_synth_dataset(output_dir: Path, splits: List[str] = None):
+    """Download PDMX-Synth dataset from HuggingFace and convert to Primus-compatible format.
+
+    Dataset: guangyangmusic/PDMX-Synth (~19GB, 216K image-ABC pairs)
+    Requires accepting the dataset terms on HuggingFace and being logged in via `huggingface-cli login`.
+    """
+    dataset_id = PDMX_SYNTH_DATASET["id"]
+    pdmx_dir = output_dir / "pdmx-synth"
+    pdmx_dir.mkdir(parents=True, exist_ok=True)
+
+    if splits is None:
+        splits = ["train", "val", "test"]
+
+    print(f"Downloading PDMX-Synth dataset: {dataset_id}")
+    print(f"Output directory: {pdmx_dir}")
+    print(f"Note: This dataset is ~19GB. You must accept the terms at")
+    print(f"  https://huggingface.co/datasets/{dataset_id}")
+    print(f"  and log in via `huggingface-cli login` before downloading.")
+    print()
+
+    total_exported = 0
+
+    for split in splits:
+        split_dir = pdmx_dir / split
+        split_dir.mkdir(parents=True, exist_ok=True)
+
+        # Skip if split already has sample directories
+        existing = list(split_dir.glob("sample_*"))
+        if existing:
+            print(f"  {split}: already has {len(existing)} samples, skipping (delete to re-download)")
+            total_exported += len(existing)
+            continue
+
+        try:
+            print(f"  Downloading {split} split...")
+            dataset = datasets.load_dataset(dataset_id, split=split)
+            print(f"  Converting {split} split ({len(dataset)} samples) to Primus format...")
+
+            for i, sample in enumerate(dataset):
+                sample_dir = split_dir / f"sample_{i:06d}"
+                sample_dir.mkdir(exist_ok=True)
+
+                # Save image
+                image = sample["image"]
+                image.save(sample_dir / f"sample_{i:06d}.png")
+
+                # Save ABC transcription as .semantic file
+                transcription = sample["transcription"]
+                semantic_path = sample_dir / f"sample_{i:06d}.semantic"
+                with open(semantic_path, "w", encoding="utf-8") as f:
+                    f.write(transcription)
+
+                if (i + 1) % 5000 == 0:
+                    print(f"    Converted {i + 1}/{len(dataset)} samples...")
+
+            total_exported += len(dataset)
+            print(f"  Completed {split}: {len(dataset)} samples")
+
+        except Exception as e:
+            print(f"  Error downloading/converting {split}: {e}")
+            continue
+
+    # Save dataset info
+    import json
+    info_file = pdmx_dir / "dataset_info.json"
+    with open(info_file, "w") as f:
+        json.dump({
+            "dataset_id": dataset_id,
+            "description": PDMX_SYNTH_DATASET["description"],
+            "label_format": "abc",
+            "downloaded_splits": splits,
+            "total_exported": total_exported,
+        }, f, indent=2)
+
+    if total_exported > 0:
+        print(f"\nSuccessfully downloaded {total_exported} PDMX-Synth samples")
+        print(f"Data available in: {pdmx_dir}/{{train,val,test}}/sample_*/")
+        return True
+    else:
+        print("Failed to download any PDMX-Synth splits")
+        return False
 
 
 def list_smt_datasets():
@@ -364,7 +455,9 @@ def main():
     # Dataset type selection
     parser.add_argument('--primus', action='store_true',
                         help='Download Camera Primus dataset')
-    parser.add_argument('--smt', type=str, nargs='+', 
+    parser.add_argument('--pdmx-synth', action='store_true',
+                        help='Download PDMX-Synth dataset (~19GB, 216K image-ABC pairs)')
+    parser.add_argument('--smt', type=str, nargs='+',
                         help='Download specific SMT datasets (space-separated)')
     parser.add_argument('--smt-all', action='store_true',
                         help='Download all SMT datasets')
@@ -397,7 +490,14 @@ def main():
         else:
             print("Failed to download Camera Primus dataset")
             sys.exit(1)
-    
+
+    # Download PDMX-Synth dataset
+    if args.pdmx_synth:
+        success = download_pdmx_synth_dataset(output_dir, splits=args.splits)
+        if not success:
+            print("Failed to download PDMX-Synth dataset")
+            sys.exit(1)
+
     # Download SMT datasets (with automatic conversion)
     if args.smt_all:
         smt_output_dir = output_dir / "smt_datasets"
@@ -417,15 +517,18 @@ def main():
                 success_count += 1
         print(f"Conversion summary: {success_count}/{len(args.export_smt)} datasets converted successfully")
     
-    if not (args.primus or args.smt or args.smt_all or args.export_smt):
+    if not (args.primus or args.pdmx_synth or args.smt or args.smt_all or args.export_smt):
         print("Please specify what to download or convert:")
         print("  --primus              Download Camera Primus dataset")
+        print("  --pdmx-synth          Download PDMX-Synth dataset (~19GB, 216K image-ABC pairs)")
         print("  --smt <datasets>      Download specific SMT datasets (auto-converts to Primus format)")
         print("  --smt-all             Download all SMT datasets (auto-converts to Primus format)")
         print("  --export-smt <datasets>  Convert existing SMT datasets to Primus format")
         print("  --list-smt            List available SMT datasets")
         print("\nExamples:")
         print("  python scripts/download.py --primus")
+        print("  python scripts/download.py --pdmx-synth")
+        print("  python scripts/download.py --pdmx-synth --splits train val")
         print("  python scripts/download.py --smt grandstaff")
         print("  python scripts/download.py --smt-all")
         print("  python scripts/download.py --export-smt grandstaff")

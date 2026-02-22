@@ -23,6 +23,7 @@ import torchvision.transforms as transforms
 sys.path.append('third_party/SMT')
 try:
     import verovio
+    import cairosvg
     VEROVIO_AVAILABLE = True
 except ImportError:
     VEROVIO_AVAILABLE = False
@@ -83,7 +84,7 @@ def load_model_and_vocab(ckpt_path: str, vocab_path: str = "data/FP_GrandStaff_B
         n_heads=8,
         n_decoder_layers=6,
         d_ff=2048,
-        max_seq_len=1512,
+        max_seq_len=4353,
         dropout=0.1
     )
     
@@ -239,13 +240,13 @@ def bekern_to_kern(bekern_str: str) -> str:
     return kern_str
 
 
-def render_music_score(kern_str: str, output_path: Optional[str] = None) -> Optional[np.ndarray]:
+def render_with_transposition(kern_str: str, transpose_semitones: int = 0) -> Optional[np.ndarray]:
     """
-    Render kern notation to image using Verovio.
+    Render kern notation with optional transposition using Verovio.
     
     Args:
-        kern_str: Kern format notation
-        output_path: Optional path to save rendered image
+        kern_str: Kern format notation string
+        transpose_semitones: Number of semitones to transpose (positive = up, negative = down)
         
     Returns:
         Rendered image as numpy array, or None if Verovio unavailable
@@ -255,86 +256,119 @@ def render_music_score(kern_str: str, output_path: Optional[str] = None) -> Opti
         return None
     
     try:
-        # Initialize Verovio toolkit
-        verovio.enableLog(verovio.LOG_OFF)  # Disable verbose logging
         tk = verovio.toolkit()
         
-        # Set rendering options
-        tk.setOptions({
+        # Set options with transposition if specified
+        options = {
             "pageWidth": 2100,
-            "footer": "none",
-            "header": "none",
             "scale": 40,
-            "adjustPageHeight": True
-        })
+            "adjustPageHeight": True,
+            "footer": "none",
+            "header": "none"
+        }
         
-        # Debug: print kern string for analysis
-        print("Kern string to be rendered:")
-        print("-" * 40)
-        print(kern_str)
-        print("-" * 40)
+        if transpose_semitones != 0:
+            options["transpose"] = str(transpose_semitones)
         
-        # Validate kern format before loading
-        if not kern_str.strip():
-            print("Error: Empty kern string")
-            return None
-        
-        if not '**kern' in kern_str:
-            print("Error: Invalid kern format - missing **kern header")
-            return None
-        
-        # Load data and render
-        try:
-            tk.loadData(kern_str)
-        except Exception as load_error:
-            print(f"Error loading kern data into Verovio: {load_error}")
-            print("This usually indicates invalid kern syntax")
-            return None
-        
-        try:
-            svg = tk.renderToSVG()
-        except Exception as render_error:
-            print(f"Error rendering to SVG: {render_error}")
-            return None
+        tk.setOptions(options)
+        tk.loadData(kern_str)
+        svg = tk.renderToSVG()
         
         if not svg or len(svg.strip()) == 0:
             print("Error: Verovio returned empty SVG")
             return None
         
-        # Convert SVG to PNG using cairosvg
-        try:
-            from cairosvg import svg2png
-            png_data = svg2png(bytestring=svg.encode('utf-8'), background_color='white')
-            
-            # Convert to numpy array
-            image_array = cv2.imdecode(np.frombuffer(png_data, np.uint8), -1)
-            
-            if image_array is None:
-                print("Error: Failed to decode PNG data")
-                return None
-                
-            image_array = cv2.cvtColor(image_array, cv2.COLOR_BGR2RGB)
-            
-            # Save if path provided
-            if output_path:
-                cv2.imwrite(output_path, cv2.cvtColor(image_array, cv2.COLOR_RGB2BGR))
-                print(f"Rendered score saved to: {output_path}")
-            
-            print("✅ Music score rendered successfully")
-            return image_array
-            
-        except ImportError:
-            print("cairosvg not available. Cannot convert SVG to PNG.")
-            return None
-        except Exception as svg_error:
-            print(f"Error converting SVG to PNG: {svg_error}")
+        # Convert SVG to PNG
+        png_data = cairosvg.svg2png(bytestring=svg.encode('utf-8'), background_color='white')
+        image_array = cv2.imdecode(np.frombuffer(png_data, np.uint8), -1)
+        
+        if image_array is None:
+            print("Error: Failed to decode PNG data")
             return None
             
+        return cv2.cvtColor(image_array, cv2.COLOR_BGR2RGB)
+        
     except Exception as e:
-        print(f"Unexpected error rendering music score: {e}")
-        import traceback
-        traceback.print_exc()
+        print(f"Error rendering music score: {e}")
         return None
+
+
+def display_comparison(original_img, transposed_img, transpose_amount):
+    """
+    Display side-by-side comparison of original and transposed notation.
+    
+    Args:
+        original_img: Original notation image array
+        transposed_img: Transposed notation image array  
+        transpose_amount: Number of semitones transposed
+    """
+    fig, axes = plt.subplots(1, 2, figsize=(16, 8))
+    
+    if original_img is not None:
+        axes[0].imshow(original_img)
+        axes[0].set_title("Original Prediction", fontsize=14)
+    else:
+        axes[0].text(0.5, 0.5, 'Rendering\nFailed', ha='center', va='center', 
+                    transform=axes[0].transAxes)
+        axes[0].set_title("Original Prediction (Failed)", fontsize=14)
+    
+    if transposed_img is not None:
+        axes[1].imshow(transposed_img)
+        if transpose_amount == 0:
+            axes[1].set_title("Same Prediction (No Transposition)", fontsize=14)
+        else:
+            direction = "Up" if transpose_amount > 0 else "Down"
+            axes[1].set_title(f"Transposed {abs(transpose_amount)} Semitones {direction}", fontsize=14)
+    else:
+        axes[1].text(0.5, 0.5, 'Rendering\nFailed', ha='center', va='center', 
+                    transform=axes[1].transAxes)
+        if transpose_amount == 0:
+            axes[1].set_title("Same Prediction (Failed)", fontsize=14)
+        else:
+            axes[1].set_title(f"Transposed {abs(transpose_amount)} Semitones (Failed)", fontsize=14)
+    
+    for ax in axes:
+        ax.axis('off')
+    
+    plt.tight_layout()
+    plt.show()
+
+
+def display_image_and_prediction(original_img_path: str, rendered_score: Optional[np.ndarray]):
+    """
+    Display original input image and predicted score side by side.
+    
+    Args:
+        original_img_path: Path to original input image
+        rendered_score: Rendered score image array (or None)
+    """
+    fig, axes = plt.subplots(1, 2, figsize=(16, 8))
+    
+    # Load and display original image
+    original_img = cv2.imread(original_img_path)
+    if original_img is not None:
+        original_img = cv2.cvtColor(original_img, cv2.COLOR_BGR2RGB)
+        axes[0].imshow(original_img)
+        axes[0].set_title("Original Input Image", fontsize=14)
+    else:
+        axes[0].text(0.5, 0.5, 'Image\nLoad Failed', ha='center', va='center', 
+                    transform=axes[0].transAxes)
+        axes[0].set_title("Original Input Image (Failed)", fontsize=14)
+    
+    # Display rendered score or placeholder
+    if rendered_score is not None:
+        axes[1].imshow(rendered_score)
+        axes[1].set_title("Predicted Music Score", fontsize=14)
+    else:
+        axes[1].text(0.5, 0.5, "Music rendering\nnot available\n(Verovio required)", 
+                    ha='center', va='center', fontsize=12, transform=axes[1].transAxes)
+        axes[1].set_title("Predicted Music Score (Unavailable)", fontsize=14)
+    
+    for ax in axes:
+        ax.axis('off')
+    
+    plt.tight_layout()
+    plt.show()
 
 
 def run_inference(model: MusicTrOCR, image_tensor: torch.Tensor, vocab_dict: Dict, max_length: int = 512) -> torch.Tensor:
@@ -369,46 +403,7 @@ def run_inference(model: MusicTrOCR, image_tensor: torch.Tensor, vocab_dict: Dic
     return predictions
 
 
-def visualize_results(original_img_path: str, rendered_score: Optional[np.ndarray], bekern_str: str):
-    """
-    Display original image and rendered score side by side.
-    
-    Args:
-        original_img_path: Path to original input image
-        rendered_score: Rendered score image array (or None)
-        bekern_str: Decoded bekern string for display
-    """
-    fig, axes = plt.subplots(1, 2, figsize=(16, 8))
-    
-    # Load and display original image
-    original_img = cv2.imread(original_img_path)
-    original_img = cv2.cvtColor(original_img, cv2.COLOR_BGR2RGB)
-    
-    axes[0].imshow(original_img)
-    axes[0].set_title("Original Input Image", fontsize=14)
-    axes[0].axis('off')
-    
-    # Display rendered score or placeholder
-    if rendered_score is not None:
-        axes[1].imshow(rendered_score)
-        axes[1].set_title("Predicted Music Score", fontsize=14)
-    else:
-        axes[1].text(0.5, 0.5, "Music rendering\nnot available\n(Verovio required)", 
-                    ha='center', va='center', fontsize=12, transform=axes[1].transAxes)
-        axes[1].set_title("Predicted Music Score (Unavailable)", fontsize=14)
-    
-    axes[1].axis('off')
-    
-    plt.tight_layout()
-    plt.show()
-    
-    # Display bekern text preview
-    print("\nPredicted BeKern Notation (first 200 characters):")
-    print("-" * 50)
-    print(bekern_str[:200] + "..." if len(bekern_str) > 200 else bekern_str)
-
-
-def demo_pipeline(img_path: str, ckpt_path: str, vocab_path: str = "data/FP_GrandStaff_BeKernw2i.npy") -> Dict:
+def demo_pipeline(img_path: str, ckpt_path: str, vocab_path: str = "data/FP_GrandStaff_BeKernw2i.npy", transpose_semitones: int = 0) -> Dict:
     """
     Complete demo pipeline from image to visualization.
     
@@ -444,18 +439,24 @@ def demo_pipeline(img_path: str, ckpt_path: str, vocab_path: str = "data/FP_Gran
     
     # Step 6: Render music score
     print("\n6. Rendering music score...")
-    rendered_score = render_music_score(kern_str, "demos/output_score.png")
+    original_score = render_with_transposition(kern_str, 0)
+    transposed_score = render_with_transposition(kern_str, transpose_semitones) if transpose_semitones != 0 else original_score
     
     # Step 7: Visualize results
     print("\n7. Displaying results...")
-    visualize_results(img_path, rendered_score, bekern_str)
+    display_image_and_prediction(img_path, original_score)
+    
+    if transpose_semitones != 0:
+        print(f"\n8. Displaying transposition comparison ({transpose_semitones} semitones)...")
+        display_comparison(original_score, transposed_score, transpose_semitones)
     
     return {
         'model': model,
         'predictions': predictions,
         'bekern_str': bekern_str,
         'kern_str': kern_str,
-        'rendered_score': rendered_score,
+        'original_score': original_score,
+        'transposed_score': transposed_score,
         'vocab_dict': vocab_dict,
         'id_to_token': id_to_token
     }

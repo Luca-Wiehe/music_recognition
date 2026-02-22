@@ -12,55 +12,37 @@ model:
     n_heads: 8               # Number of attention heads
     n_decoder_layers: 6      # Number of decoder layers
     d_ff: 2048              # Feed-forward dimension
-    max_seq_len: 4353       # Maximum sequence length (increased to handle longer sequences)
+    max_seq_len: 2048       # Maximum sequence length (matches tokenizer model_max_length)
     dropout: 0.1            # Dropout rate
 
 # Data configuration
 data:
-  # List of datasets with their formats
-  datasets:
-    #- path: "data/datasets/primus"
-    #  format: "primus"
-    #  full_page: false
-    - path: "data/datasets/smt_datasets/camera-grandstaff"
-      format: "bekern"
-      full_page: false
-    - path: "data/datasets/smt_datasets/fp-grandstaff"
-      format: "bekern"
-      full_page: true
-  
-  # Vocabulary configuration
-  primus_vocabulary_path: "data/semantic_labels.txt"  # For primus format datasets
-  bekern_vocabulary_path: "data/FP_GrandStaff_BeKernw2i.npy"  # For bekern format datasets
-  mapping_file_path: "data/primus_to_bekern_mapping.json"  # Conversion mapping file
-  
-  # Data processing
-  num_workers: 4
+  dataset_id: "guangyangmusic/PDMX-Synth"
+  tokenizer_id: "guangyangmusic/legato"
+  img_height: 224
+
+  # Data loading
+  num_workers: 1
   pin_memory: true
-  use_unified_format: true  # If true, convert all to bekern format for consistency
 
 # Training configuration
 training:
-  batch_size: 16
-  epochs: 100
-  
-  # Optimizer settings
+  batch_size: 8
+  gradient_accumulation_steps: 4  # effective batch size = 8 * 4 = 32
+  epochs: 10
+
+  # Optimizer settings (following LEGATO paper)
   optimizer:
-    type: "Adam"
-    learning_rate: 0.0001
-    weight_decay: 0.00001
-    betas: [0.9, 0.999]
-  
-  # Learning rate scheduler
+    type: "AdamW"
+    learning_rate: 0.0003
+    weight_decay: 0.01
+    betas: [0.9, 0.99]
+    eps: 0.000001
+
+  # Learning rate scheduler (linear warmup + linear decay)
   scheduler:
-    type: "ReduceLROnPlateau"
-    mode: "min"
-    factor: 0.5
-    patience: 5
-    threshold: 0.0001
-    threshold_mode: "rel"
-    cooldown: 2
-    eps: 0.00000001
+    type: "LinearWarmup"
+    warmup_ratio: 0.03
   
   # Early stopping
   early_stop_patience: 6
@@ -84,4 +66,4 @@ logging:
 # Hardware configuration
 hardware:
   device: "auto"  # auto, cpu, cuda
-  mixed_precision: false  # Use automatic mixed precision (AMP)
+  mixed_precision: true  # Use automatic mixed precision (AMP)

@@ -1,0 +1,50 @@
+# ViT-Small backbone (22M encoder params)
+# Usage: python -m src.train --config configs/backbones/vit_small.yaml
+
+model:
+  type: "MusicTrOCR"
+  params:
+    vision_model_name: "WinKawaks/vit-small-patch16-224"
+    d_model: 512
+    n_heads: 8
+    n_decoder_layers: 6
+    d_ff: 2048
+    max_seq_len: 2048
+    dropout: 0.1
+
+data:
+  dataset_id: "guangyangmusic/PDMX-Synth"
+  tokenizer_id: "guangyangmusic/legato"
+  img_height: 224
+  num_workers: 1
+  pin_memory: true
+
+training:
+  batch_size: 8
+  gradient_accumulation_steps: 4
+  epochs: 10
+  optimizer:
+    type: "AdamW"
+    learning_rate: 0.0003
+    weight_decay: 0.01
+    betas: [0.9, 0.99]
+    eps: 0.000001
+  scheduler:
+    type: "LinearWarmup"
+    warmup_ratio: 0.03
+  early_stop_patience: 6
+  grad_clip_norm: 1.0
+  checkpoint_dir: "networks/checkpoints/vit_small"
+
+logging:
+  use_wandb: true
+  verbose: false
+  wandb:
+    project: "music-recognition"
+    run_name: "backbone-vit-small"
+    tags: ["backbone-sweep", "vit-small", "omr"]
+    notes: "Backbone sweep: ViT-Small/16 (22M params)"
+
+hardware:
+  device: "auto"
+  mixed_precision: true
