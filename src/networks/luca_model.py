@@ -477,6 +477,7 @@ class MusicTrOCR(nn.Module):
 
             return {
                 'logits': logits,
+                'encoder_features': memory,
                 'decoder_input': decoder_input,
                 'decoder_target': decoder_target,
                 'tgt_key_padding_mask': tgt_key_padding_mask
