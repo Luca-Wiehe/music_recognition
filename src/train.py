@@ -23,10 +23,12 @@ from src.data.unified_dataset import UnifiedDataset, create_collate_fn, load_pdm
 # Model imports
 from src.networks.luca_model import MusicTrOCR
 from src.networks.monophonic_nn import MonophonicModel
+from src.networks.distillation import DistillationWrapper
 
 # Utils
 import src.utils.utils as utils
 from src.utils.debug_utils import should_print_debug, print_debug_info
+from src.metrics import compute_metrics, aggregate_metrics
 
 try:
     import wandb
@@ -46,8 +48,52 @@ def load_config(config_path: str) -> dict:
 def create_model(config: dict, vocab_size: int,
                  pad_token_id: int = None, bos_token_id: int = None,
                  eos_token_id: int = None) -> torch.nn.Module:
-    """Create model based on configuration"""
+    """Create model based on configuration.
+
+    Supports model types: MusicTrOCR, MonophonicModel, Distillation.
+    For Distillation the config must contain ``model.teacher.checkpoint``
+    and ``model.student.params`` (see configs/distillation.yaml).
+    """
     model_type = config['model']['type']
+
+    if model_type == 'Distillation':
+        if pad_token_id is None or bos_token_id is None or eos_token_id is None:
+            raise ValueError(f"Missing special token IDs: "
+                           f"pad={pad_token_id}, bos={bos_token_id}, eos={eos_token_id}")
+
+        token_kwargs = dict(
+            vocab_size=vocab_size,
+            pad_token_id=pad_token_id,
+            bos_token_id=bos_token_id,
+            eos_token_id=eos_token_id,
+        )
+
+        # --- teacher ---
+        teacher_ckpt_path = config['model']['teacher']['checkpoint']
+        print(f"Loading teacher checkpoint from {teacher_ckpt_path}")
+        teacher_ckpt = torch.load(teacher_ckpt_path, map_location='cpu')
+        teacher_params = teacher_ckpt['config']['model']['params']
+        teacher = MusicTrOCR(**token_kwargs, **teacher_params)
+        teacher.load_state_dict(teacher_ckpt['model_state_dict'])
+
+        # --- student ---
+        student_params = config['model']['student']['params']
+        student = MusicTrOCR(**token_kwargs, **student_params)
+
+        # --- wrapper ---
+        distill_cfg = config['model'].get('distillation', {})
+        model = DistillationWrapper(
+            teacher=teacher,
+            student=student,
+            alpha=distill_cfg.get('alpha', 0.3),
+            beta=distill_cfg.get('beta', 0.5),
+            gamma=distill_cfg.get('gamma', 0.2),
+            temperature=distill_cfg.get('temperature', 4.0),
+        )
+        print(f"Distillation: teacher {sum(p.numel() for p in teacher.parameters()):,} params "
+              f"→ student {model.count_parameters():,} trainable params")
+        return model
+
     model_params = config['model']['params']
 
     if model_type == 'MusicTrOCR':
@@ -148,17 +194,20 @@ def setup_optimizer_and_scheduler(model: torch.nn.Module, config: dict,
     optimizer_config = config['training']['optimizer']
     scheduler_config = config['training']['scheduler']
 
+    # Use only trainable parameters (important for distillation: skips frozen teacher)
+    params = model.trainable_parameters() if hasattr(model, 'trainable_parameters') else model.parameters()
+
     # Create optimizer
     if optimizer_config['type'] == 'Adam':
         optimizer = torch.optim.Adam(
-            model.parameters(),
+            params,
             lr=optimizer_config['learning_rate'],
             weight_decay=optimizer_config.get('weight_decay', 0.0),
             betas=optimizer_config.get('betas', (0.9, 0.999))
         )
     elif optimizer_config['type'] == 'AdamW':
         optimizer = torch.optim.AdamW(
-            model.parameters(),
+            params,
             lr=optimizer_config['learning_rate'],
             weight_decay=optimizer_config.get('weight_decay', 0.01),
             betas=optimizer_config.get('betas', (0.9, 0.999)),
@@ -399,6 +448,67 @@ def validate_epoch(model: torch.nn.Module,
     return avg_loss
 
 
+def evaluate_metrics(model: torch.nn.Module,
+                     val_loader: DataLoader,
+                     device: torch.device,
+                     config: dict,
+                     max_batches: int | None = None) -> dict:
+    """
+    Run greedy decoding on *val_loader* and compute SER / CER / sequence accuracy.
+
+    This is more expensive than ``validate_epoch`` (which only computes loss
+    via teacher forcing) because it calls ``model.generate()`` autoregressively
+    for every batch.
+
+    Args:
+        model:       Model with a ``generate(images, max_length=…)`` method.
+        val_loader:  Validation data loader.
+        device:      CUDA / CPU device.
+        config:      Training config (used for max_seq_len).
+        max_batches: If set, evaluate only this many batches (useful for
+                     periodic mid-training checks).
+
+    Returns:
+        Aggregated metric dict with keys ``ser``, ``cer``, ``sequence_acc``,
+        ``num_samples``.
+    """
+    generate_fn = getattr(model, "generate", None)
+    if generate_fn is None:
+        return {"ser": -1, "cer": -1, "sequence_acc": -1, "num_samples": 0}
+
+    dataset = val_loader.dataset
+    pad_id = dataset.pad_token_id
+    bos_id = dataset.bos_token_id
+    eos_id = dataset.eos_token_id
+    index_to_vocab = getattr(dataset, "index_to_vocabulary", None)
+
+    max_len = config.get("model", {}).get("params", {}).get("max_seq_len", 512)
+
+    model.eval()
+    batch_metrics = []
+
+    with torch.no_grad():
+        for batch_idx, batch in enumerate(val_loader):
+            if max_batches is not None and batch_idx >= max_batches:
+                break
+
+            images, targets = batch
+            images = images.to(device)
+
+            predictions = generate_fn(images, max_length=max_len)
+
+            m = compute_metrics(
+                predictions.cpu(), targets, pad_id, bos_id, eos_id,
+                index_to_vocab=index_to_vocab,
+            )
+            batch_metrics.append(m)
+
+    if not batch_metrics:
+        return {"ser": -1, "cer": -1, "sequence_acc": -1, "num_samples": 0}
+
+    return aggregate_metrics(batch_metrics)
+
+
 def train_stage(config: dict, stage: int, resume_path: str = None, stage1_checkpoint: str = None):
     """Train for a specific stage"""
     print(f"=== Starting Training Stage {stage} ===")
@@ -432,7 +542,8 @@ def train_stage(config: dict, stage: int, resume_path: str = None, stage1_checkp
     model.to(device)
 
     print(f"Model: {config['model']['type']}")
-    print(f"Total parameters: {sum(p.numel() for p in model.parameters() if p.requires_grad):,}")
+    trainable = model.count_parameters() if hasattr(model, 'count_parameters') else sum(p.numel() for p in model.parameters() if p.requires_grad)
+    print(f"Trainable parameters: {trainable:,}")
 
     optimizer, scheduler = setup_optimizer_and_scheduler(
         model, config, steps_per_epoch=len(train_loader))
@@ -487,6 +598,39 @@ def train_stage(config: dict, stage: int, resume_path: str = None, stage1_checkp
             print(f"Train Loss: {train_loss:.6f}, Val Loss: N/A (overfitting mode)")
         else:
             print(f"Train Loss: {train_loss:.6f}, Val Loss: {val_loss:.6f}")
+
+        # --- SER / CER / sequence accuracy (autoregressive) ---
+        eval_every = config.get('evaluation', {}).get('metrics_every_n_epochs', 0)
+        metrics_max_batches = config.get('evaluation', {}).get('metrics_max_batches', None)
+        is_last_epoch = (epoch + 1 == epochs) or (
+            len(val_loader) > 0 and patience_counter + 1 >= early_stop_patience
+        )
+        should_eval_metrics = (
+            len(val_loader) > 0
+            and hasattr(model, 'generate')
+            and (
+                (eval_every > 0 and (epoch + 1) % eval_every == 0)
+                or is_last_epoch
+            )
+        )
+
+        if should_eval_metrics:
+            print("  Computing SER / CER / sequence accuracy …")
+            metrics = evaluate_metrics(
+                model, val_loader, device, config,
+                max_batches=metrics_max_batches,
+            )
+            print(f"  SER: {metrics['ser']*100:.2f}%  "
+                  f"CER: {metrics['cer']*100:.2f}%  "
+                  f"SeqAcc: {metrics['sequence_acc']*100:.1f}%  "
+                  f"(n={metrics['num_samples']})")
+            if wandb_run:
+                wandb_run.log({
+                    'val/ser': metrics['ser'],
+                    'val/cer': metrics['cer'],
+                    'val/sequence_acc': metrics['sequence_acc'],
+                    'epoch': epoch + 1,
+                })
 
         # Only step per-epoch schedulers here (per-batch ones are stepped in train_epoch)
         if scheduler and isinstance(scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
