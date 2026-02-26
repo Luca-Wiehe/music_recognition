@@ -28,6 +28,7 @@ from src.networks.distillation import DistillationWrapper
 # Utils
 import src.utils.utils as utils
 from src.utils.debug_utils import should_print_debug, print_debug_info
+from src.metrics import compute_metrics, aggregate_metrics
 
 try:
     import wandb
@@ -447,6 +448,67 @@ def validate_epoch(model: torch.nn.Module,
     return avg_loss
 
 
+def evaluate_metrics(model: torch.nn.Module,
+                     val_loader: DataLoader,
+                     device: torch.device,
+                     config: dict,
+                     max_batches: int | None = None) -> dict:
+    """
+    Run greedy decoding on *val_loader* and compute SER / CER / sequence accuracy.
+
+    This is more expensive than ``validate_epoch`` (which only computes loss
+    via teacher forcing) because it calls ``model.generate()`` autoregressively
+    for every batch.
+
+    Args:
+        model:       Model with a ``generate(images, max_length=…)`` method.
+        val_loader:  Validation data loader.
+        device:      CUDA / CPU device.
+        config:      Training config (used for max_seq_len).
+        max_batches: If set, evaluate only this many batches (useful for
+                     periodic mid-training checks).
+
+    Returns:
+        Aggregated metric dict with keys ``ser``, ``cer``, ``sequence_acc``,
+        ``num_samples``.
+    """
+    generate_fn = getattr(model, "generate", None)
+    if generate_fn is None:
+        return {"ser": -1, "cer": -1, "sequence_acc": -1, "num_samples": 0}
+
+    dataset = val_loader.dataset
+    pad_id = dataset.pad_token_id
+    bos_id = dataset.bos_token_id
+    eos_id = dataset.eos_token_id
+    index_to_vocab = getattr(dataset, "index_to_vocabulary", None)
+
+    max_len = config.get("model", {}).get("params", {}).get("max_seq_len", 512)
+
+    model.eval()
+    batch_metrics = []
+
+    with torch.no_grad():
+        for batch_idx, batch in enumerate(val_loader):
+            if max_batches is not None and batch_idx >= max_batches:
+                break
+
+            images, targets = batch
+            images = images.to(device)
+
+            predictions = generate_fn(images, max_length=max_len)
+
+            m = compute_metrics(
+                predictions.cpu(), targets, pad_id, bos_id, eos_id,
+                index_to_vocab=index_to_vocab,
+            )
+            batch_metrics.append(m)
+
+    if not batch_metrics:
+        return {"ser": -1, "cer": -1, "sequence_acc": -1, "num_samples": 0}
+
+    return aggregate_metrics(batch_metrics)
+
+
 def train_stage(config: dict, stage: int, resume_path: str = None, stage1_checkpoint: str = None):
     """Train for a specific stage"""
     print(f"=== Starting Training Stage {stage} ===")
@@ -536,6 +598,39 @@ def train_stage(config: dict, stage: int, resume_path: str = None, stage1_checkp
             print(f"Train Loss: {train_loss:.6f}, Val Loss: N/A (overfitting mode)")
         else:
             print(f"Train Loss: {train_loss:.6f}, Val Loss: {val_loss:.6f}")
+
+        # --- SER / CER / sequence accuracy (autoregressive) ---
+        eval_every = config.get('evaluation', {}).get('metrics_every_n_epochs', 0)
+        metrics_max_batches = config.get('evaluation', {}).get('metrics_max_batches', None)
+        is_last_epoch = (epoch + 1 == epochs) or (
+            len(val_loader) > 0 and patience_counter + 1 >= early_stop_patience
+        )
+        should_eval_metrics = (
+            len(val_loader) > 0
+            and hasattr(model, 'generate')
+            and (
+                (eval_every > 0 and (epoch + 1) % eval_every == 0)
+                or is_last_epoch
+            )
+        )
+
+        if should_eval_metrics:
+            print("  Computing SER / CER / sequence accuracy …")
+            metrics = evaluate_metrics(
+                model, val_loader, device, config,
+                max_batches=metrics_max_batches,
+            )
+            print(f"  SER: {metrics['ser']*100:.2f}%  "
+                  f"CER: {metrics['cer']*100:.2f}%  "
+                  f"SeqAcc: {metrics['sequence_acc']*100:.1f}%  "
+                  f"(n={metrics['num_samples']})")
+            if wandb_run:
+                wandb_run.log({
+                    'val/ser': metrics['ser'],
+                    'val/cer': metrics['cer'],
+                    'val/sequence_acc': metrics['sequence_acc'],
+                    'epoch': epoch + 1,
+                })
 
         # Only step per-epoch schedulers here (per-batch ones are stepped in train_epoch)
         if scheduler and isinstance(scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
