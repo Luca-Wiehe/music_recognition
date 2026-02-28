@@ -75,3 +75,76 @@ The implementation of this stage is almost completed. However, the training in t
 
 ### TrOMR
 The second architecture is a transformer architecture reimplemented from the TrOMR Paper. It uses Transfer Learning with a pretrained Vision Transformer to predict sequences of music symbols.
+
+#### Training
+
+MusicTrOCR can be trained entirely from CLI flags — no config file needed:
+
+```bash
+# Full fine-tuning with DeiT-Small encoder:
+python -m src.train --encoder facebook/deit-small-patch16-224 \
+    --wandb-project music-recognition
+
+# LoRA fine-tuning (rank 8):
+python -m src.train --encoder facebook/deit-small-patch16-224 \
+    --encoder-mode lora --lora-rank 8
+
+# Pitch-only ablation:
+python -m src.train --encoder facebook/deit-small-patch16-224 --strip-non-pitch
+```
+
+For complex setups (distillation, monophonic model), use a YAML config:
+```bash
+python -m src.train --config configs/distillation.yaml
+```
+
+Run `python -m src.train --help` for all available options.
+
+#### Choosing the Vision Encoder
+
+All encoders were benchmarked using the same MusicTrOCR decoder (6-layer Transformer, d_model=512) with full finetuning on the PDMX-Synth dataset for 10 epochs.
+
+| Encoder | Pretrained Model | Encoder Params | Total Params | Best Val Loss |
+|---|---|---|---|---|
+| DeiT-Small | `facebook/deit-small-patch16-224` | 22M | 58.9M | **0.3205** |
+| ConvNeXt-Tiny | `facebook/convnext-tiny-224` | 28M | 65.1M | 0.3371 |
+| Swin-Tiny | `microsoft/swin-tiny-patch4-window7-224` | 28M | 64.8M | 0.3555 |
+| ViT-Small | `WinKawaks/vit-small-patch16-224` | 22M | 58.9M | 0.3922 |
+| ResNet-50 | `microsoft/resnet-50` | 25M | 61.5M | 0.4529 |
+| MobileViT-Small | `apple/mobilevit-small` | 6M | 42.2M | 0.4857 |
+| EfficientNet-B0 | `google/efficientnet-b0` | 5M | 41.6M | 0.5119 |
+
+<details>
+<summary>Reproduction commands</summary>
+
+```bash
+# DeiT-Small (best)
+python -m src.train --encoder facebook/deit-small-patch16-224 \
+    --wandb-project music-recognition --wandb-run-name backbone-deit-small
+
+# ConvNeXt-Tiny
+python -m src.train --encoder facebook/convnext-tiny-224 \
+    --wandb-project music-recognition --wandb-run-name backbone-convnext-tiny
+
+# Swin-Tiny
+python -m src.train --encoder microsoft/swin-tiny-patch4-window7-224 \
+    --wandb-project music-recognition --wandb-run-name backbone-swin-tiny
+
+# ViT-Small
+python -m src.train --encoder WinKawaks/vit-small-patch16-224 \
+    --wandb-project music-recognition --wandb-run-name backbone-vit-small
+
+# ResNet-50
+python -m src.train --encoder microsoft/resnet-50 \
+    --wandb-project music-recognition --wandb-run-name backbone-resnet50
+
+# MobileViT-Small
+python -m src.train --encoder apple/mobilevit-small \
+    --wandb-project music-recognition --wandb-run-name backbone-mobilevit-small
+
+# EfficientNet-B0
+python -m src.train --encoder google/efficientnet-b0 \
+    --wandb-project music-recognition --wandb-run-name backbone-efficientnet-b0
+```
+
+</details>

@@ -5,6 +5,7 @@ tokenises labels with a BPE tokenizer (e.g. LEGATO).
 """
 
 import logging
+import re
 from typing import List, Optional, Tuple
 
 import torch
@@ -13,6 +14,43 @@ from torchvision import transforms
 from PIL import Image
 
 logger = logging.getLogger(__name__)
+
+
+# ====================================================================== #
+# ABC filtering
+# ====================================================================== #
+
+def filter_abc_pitch_only(text: str) -> str:
+    """Strip an ABC transcription down to notes, durations, rests, key
+    signatures, accidentals, voice markers, barlines, and chord brackets.
+
+    Removes: metadata headers (X:, T:, C:, L:, M:, Q:, I:, %%score),
+    lyrics (w: lines), ties (-), slurs (()), linebreak markers ($),
+    and inline comments (%...).
+    """
+    lines = text.split("\n")
+    kept: list[str] = []
+    for line in lines:
+        # Keep key-signature lines verbatim
+        if line.startswith("K:"):
+            kept.append(line)
+            continue
+        # Keep voice markers (strip clef / transposition info)
+        if line.startswith("V:"):
+            kept.append(line.split()[0])
+            continue
+        # Drop other header / metadata / lyric lines
+        if re.match(r"^[A-Za-z]:", line) or line.startswith("%%") or line.startswith("w:"):
+            continue
+        # Music lines — strip non-pitch/rhythm elements
+        filt = re.sub(r"[()]", "", line)       # slurs
+        filt = re.sub(r"-", "", filt)           # ties
+        filt = re.sub(r"\$", "", filt)          # linebreak markers
+        filt = re.sub(r"%.*", "", filt)         # inline comments
+        filt = re.sub(r" +", " ", filt).rstrip()
+        if filt.strip():
+            kept.append(filt)
+    return "\n".join(kept)
 
 
 class UnifiedDataset(data.Dataset):
@@ -28,6 +66,7 @@ class UnifiedDataset(data.Dataset):
         img_height: int = 128,
         max_seq_len: int = None,
         transform: Optional[callable] = None,
+        strip_non_pitch: bool = False,
     ):
         """
         Args:
@@ -36,12 +75,15 @@ class UnifiedDataset(data.Dataset):
             img_height: Target image height (width scaled proportionally).
             max_seq_len: Truncate label sequences to this length (None = no truncation).
             transform: Optional additional image transforms.
+            strip_non_pitch: If True, filter transcriptions to keep only notes,
+                durations, rests, key signatures, accidentals, and structural tokens.
         """
         self.dataset = hf_dataset
         self.tokenizer = tokenizer
         self.img_height = img_height
         self.max_seq_len = max_seq_len
         self.transform = transform
+        self.strip_non_pitch = strip_non_pitch
 
         # Vocabulary mappings (compatible with create_model / train_stage)
         self.vocabulary_to_index = tokenizer.get_vocab()
@@ -93,6 +135,8 @@ class UnifiedDataset(data.Dataset):
 
     def _tokenize(self, text: str) -> torch.Tensor:
         """Encode ABC-notation text with the BPE tokenizer, truncating if needed."""
+        if self.strip_non_pitch:
+            text = filter_abc_pitch_only(text)
         token_ids = self.tokenizer.encode(text)
         if self.max_seq_len is not None and len(token_ids) > self.max_seq_len:
             token_ids = token_ids[: self.max_seq_len - 1] + [self.eos_token_id]
@@ -150,6 +194,7 @@ def load_pdmx_synth(
     test_fraction: float = 0.1,
     seed: int = 42,
     transform: Optional[callable] = None,
+    strip_non_pitch: bool = False,
 ) -> Tuple["UnifiedDataset", "UnifiedDataset", "UnifiedDataset"]:
     """
     Load a HuggingFace image-ABC dataset and split into train / val / test.
@@ -180,8 +225,8 @@ def load_pdmx_synth(
 
     logger.info(f"Splits -- train: {len(train_hf)}, val: {len(val_hf)}, test: {len(test_hf)}")
 
-    train_ds = UnifiedDataset(train_hf, tokenizer, img_height=img_height, max_seq_len=max_seq_len, transform=transform)
-    val_ds = UnifiedDataset(val_hf, tokenizer, img_height=img_height, max_seq_len=max_seq_len, transform=transform)
-    test_ds = UnifiedDataset(test_hf, tokenizer, img_height=img_height, max_seq_len=max_seq_len, transform=transform)
+    train_ds = UnifiedDataset(train_hf, tokenizer, img_height=img_height, max_seq_len=max_seq_len, transform=transform, strip_non_pitch=strip_non_pitch)
+    val_ds = UnifiedDataset(val_hf, tokenizer, img_height=img_height, max_seq_len=max_seq_len, transform=transform, strip_non_pitch=strip_non_pitch)
+    test_ds = UnifiedDataset(test_hf, tokenizer, img_height=img_height, max_seq_len=max_seq_len, transform=transform, strip_non_pitch=strip_non_pitch)
 
     return train_ds, val_ds, test_ds

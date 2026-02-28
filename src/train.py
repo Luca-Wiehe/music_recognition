@@ -3,8 +3,17 @@
 Flexible training script for optical music recognition models.
 
 Usage:
-    python -m src.train --config configs/luca_model.yaml
+    # CLI mode (no config file needed):
+    python -m src.train --encoder facebook/deit-small-patch16-224
+    python -m src.train --encoder facebook/deit-small-patch16-224 --encoder-mode lora --lora-rank 8
+    python -m src.train --encoder facebook/deit-small-patch16-224 --strip-non-pitch --epochs 15
+
+    # Config mode (for distillation, monophonic, or complex setups):
+    python -m src.train --config configs/distillation.yaml
     python -m src.train --config configs/monophonic_model.yaml --resume checkpoint.pt
+
+    # Mixed: config as base, CLI overrides specific values:
+    python -m src.train --config configs/luca_model.yaml --lr 1e-4 --epochs 20
 """
 
 import argparse
@@ -24,6 +33,7 @@ from src.data.unified_dataset import UnifiedDataset, create_collate_fn, load_pdm
 from src.networks.luca_model import MusicTrOCR
 from src.networks.monophonic_nn import MonophonicModel
 from src.networks.distillation import DistillationWrapper
+from transformers import AutoModel
 
 # Utils
 import src.utils.utils as utils
@@ -42,6 +52,167 @@ def load_config(config_path: str) -> dict:
     """Load configuration from YAML file"""
     with open(config_path, 'r') as f:
         config = yaml.safe_load(f)
+    return config
+
+
+def _encoder_short_name(encoder: str) -> str:
+    """Derive a short name from a HuggingFace model ID for checkpoint dirs and wandb.
+
+    Examples:
+        "facebook/deit-small-patch16-224" -> "deit_small"
+        "microsoft/swin-tiny-patch4-window7-224" -> "swin_tiny"
+        "google/efficientnet-b0" -> "efficientnet_b0"
+    """
+    name = encoder.split("/")[-1]           # drop org prefix
+    name = name.split("-patch")[0]           # drop patch/window suffixes
+    name = name.replace("-", "_")
+    return name
+
+
+def build_config_from_args(args: argparse.Namespace) -> dict:
+    """Build a full config dict from CLI arguments.
+
+    Produces the same nested structure that ``load_config()`` returns so all
+    downstream code (``create_model``, ``setup_data_loaders``, etc.) works
+    unchanged.
+    """
+    short = _encoder_short_name(args.encoder)
+    checkpoint_dir = args.checkpoint_dir or f"networks/checkpoints/{short}"
+
+    config = {
+        "model": {
+            "type": "MusicTrOCR",
+            "encoder_mode": args.encoder_mode,
+            "params": {
+                "vision_model_name": args.encoder,
+                "d_model": args.d_model,
+                "n_heads": args.n_heads,
+                "n_decoder_layers": args.n_decoder_layers,
+                "d_ff": args.d_ff,
+                "max_seq_len": args.max_seq_len,
+                "dropout": args.dropout,
+            },
+        },
+        "data": {
+            "dataset_id": args.dataset,
+            "tokenizer_id": args.tokenizer,
+            "img_height": args.img_height,
+            "strip_non_pitch": args.strip_non_pitch,
+            "num_workers": 1,
+            "pin_memory": True,
+        },
+        "training": {
+            "batch_size": args.batch_size,
+            "gradient_accumulation_steps": args.grad_accum_steps,
+            "epochs": args.epochs,
+            "optimizer": {
+                "type": "AdamW",
+                "learning_rate": args.lr,
+                "weight_decay": args.weight_decay,
+                "betas": [0.9, 0.99],
+                "eps": 1e-6,
+            },
+            "scheduler": {
+                "type": "LinearWarmup",
+                "warmup_ratio": 0.03,
+            },
+            "early_stop_patience": args.early_stop_patience,
+            "grad_clip_norm": 1.0,
+            "checkpoint_dir": checkpoint_dir,
+        },
+        "hardware": {
+            "device": "auto",
+            "mixed_precision": True,
+        },
+    }
+
+    # LoRA / QLoRA settings
+    if args.encoder_mode in ("lora", "qlora"):
+        config["model"]["lora"] = {
+            "rank": args.lora_rank,
+            "alpha": args.lora_alpha,
+            "target_modules": ["query", "value"],
+            "dropout": 0.05,
+        }
+
+    # Wandb (only enabled if --wandb-project is given)
+    if args.wandb_project:
+        run_name = args.wandb_run_name or f"backbone-{short}"
+        tags = [t.strip() for t in args.wandb_tags.split(",")] if args.wandb_tags else ["omr", short]
+        config["logging"] = {
+            "use_wandb": True,
+            "verbose": False,
+            "wandb": {
+                "project": args.wandb_project,
+                "run_name": run_name,
+                "tags": tags,
+                "notes": f"MusicTrOCR with {args.encoder}",
+            },
+        }
+    else:
+        config["logging"] = {"use_wandb": False, "verbose": False}
+
+    return config
+
+
+def apply_cli_overrides(config: dict, args: argparse.Namespace) -> dict:
+    """Apply explicitly-set CLI flags on top of a YAML config.
+
+    Only overrides values for flags the user actually passed on the command
+    line (detected via ``argparse`` defaults).
+    """
+    # Model params
+    if args.d_model != 512:
+        config.setdefault("model", {}).setdefault("params", {})["d_model"] = args.d_model
+    if args.n_heads != 8:
+        config.setdefault("model", {}).setdefault("params", {})["n_heads"] = args.n_heads
+    if args.n_decoder_layers != 6:
+        config.setdefault("model", {}).setdefault("params", {})["n_decoder_layers"] = args.n_decoder_layers
+    if args.d_ff != 2048:
+        config.setdefault("model", {}).setdefault("params", {})["d_ff"] = args.d_ff
+    if args.max_seq_len != 2048:
+        config.setdefault("model", {}).setdefault("params", {})["max_seq_len"] = args.max_seq_len
+    if args.dropout != 0.1:
+        config.setdefault("model", {}).setdefault("params", {})["dropout"] = args.dropout
+    if args.encoder_mode != "full":
+        config.setdefault("model", {})["encoder_mode"] = args.encoder_mode
+
+    # Training params
+    if args.batch_size != 8:
+        config.setdefault("training", {})["batch_size"] = args.batch_size
+    if args.grad_accum_steps != 4:
+        config.setdefault("training", {})["gradient_accumulation_steps"] = args.grad_accum_steps
+    if args.epochs != 10:
+        config.setdefault("training", {})["epochs"] = args.epochs
+    if args.lr != 3e-4:
+        config.setdefault("training", {}).setdefault("optimizer", {})["learning_rate"] = args.lr
+    if args.weight_decay != 0.01:
+        config.setdefault("training", {}).setdefault("optimizer", {})["weight_decay"] = args.weight_decay
+    if args.early_stop_patience != 6:
+        config.setdefault("training", {})["early_stop_patience"] = args.early_stop_patience
+    if args.checkpoint_dir:
+        config.setdefault("training", {})["checkpoint_dir"] = args.checkpoint_dir
+
+    # Data params
+    if args.dataset != "guangyangmusic/PDMX-Synth":
+        config.setdefault("data", {})["dataset_id"] = args.dataset
+    if args.tokenizer != "guangyangmusic/legato":
+        config.setdefault("data", {})["tokenizer_id"] = args.tokenizer
+    if args.img_height != 224:
+        config.setdefault("data", {})["img_height"] = args.img_height
+    if args.strip_non_pitch:
+        config.setdefault("data", {})["strip_non_pitch"] = True
+
+    # Wandb overrides
+    if args.wandb_project:
+        config.setdefault("logging", {})["use_wandb"] = True
+        config["logging"].setdefault("wandb", {})["project"] = args.wandb_project
+    if args.wandb_run_name:
+        config.setdefault("logging", {}).setdefault("wandb", {})["run_name"] = args.wandb_run_name
+    if args.wandb_tags:
+        tags = [t.strip() for t in args.wandb_tags.split(",")]
+        config.setdefault("logging", {}).setdefault("wandb", {})["tags"] = tags
+
     return config
 
 
@@ -134,16 +305,24 @@ def setup_data_loaders(config: dict, stage: int = None) -> tuple:
     tokenizer_id = data_config['tokenizer_id']
     img_height = data_config.get('img_height', 128)
     max_seq_len = config.get('model', {}).get('params', {}).get('max_seq_len', None)
+    # For distillation configs, params live under model.student.params
+    if max_seq_len is None:
+        max_seq_len = config.get('model', {}).get('student', {}).get('params', {}).get('max_seq_len', None)
+
+    strip_non_pitch = data_config.get('strip_non_pitch', False)
 
     print(f"Loading dataset '{dataset_id}' with tokenizer '{tokenizer_id}'")
     if max_seq_len:
         print(f"Truncating sequences to max_seq_len={max_seq_len}")
+    if strip_non_pitch:
+        print("Filtering transcriptions to pitch/rhythm/key only (strip_non_pitch=True)")
 
     train_dataset, val_dataset, test_dataset = load_pdmx_synth(
         dataset_id=dataset_id,
         tokenizer_id=tokenizer_id,
         img_height=img_height,
         max_seq_len=max_seq_len,
+        strip_non_pitch=strip_non_pitch,
     )
 
     print(f"Dataset splits:")
@@ -194,8 +373,8 @@ def setup_optimizer_and_scheduler(model: torch.nn.Module, config: dict,
     optimizer_config = config['training']['optimizer']
     scheduler_config = config['training']['scheduler']
 
-    # Use only trainable parameters (important for distillation: skips frozen teacher)
-    params = model.trainable_parameters() if hasattr(model, 'trainable_parameters') else model.parameters()
+    # Only optimise trainable parameters (important for distillation / frozen / LoRA runs)
+    params = model.trainable_parameters() if hasattr(model, 'trainable_parameters') else [p for p in model.parameters() if p.requires_grad]
 
     # Create optimizer
     if optimizer_config['type'] == 'Adam':
@@ -539,11 +718,67 @@ def train_stage(config: dict, stage: int, resume_path: str = None, stage1_checkp
     model.index_to_vocabulary = train_dataset.index_to_vocabulary
     model.vocabulary_to_index = train_dataset.vocabulary_to_index
 
+    # --- Encoder mode: frozen / LoRA / QLoRA ---
+    encoder_mode = config['model'].get('encoder_mode', 'full')
+
+    if encoder_mode == 'qlora':
+        from peft import get_peft_model, LoraConfig
+        from transformers import BitsAndBytesConfig
+
+        quantization_config = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_compute_dtype=torch.float16,
+            bnb_4bit_quant_type="nf4",
+        )
+        # Reload backbone in 4-bit (bitsandbytes handles device placement)
+        model.vision_encoder.backbone = AutoModel.from_pretrained(
+            config['model']['params']['vision_model_name'],
+            quantization_config=quantization_config,
+        )
+        for param in model.vision_encoder.parameters():
+            param.requires_grad = False
+
+        lora_cfg = config['model'].get('lora', {})
+        lora_config = LoraConfig(
+            r=lora_cfg.get('rank', 8),
+            lora_alpha=lora_cfg.get('alpha', 16),
+            target_modules=lora_cfg.get('target_modules', ['query', 'value']),
+            lora_dropout=lora_cfg.get('dropout', 0.05),
+        )
+        model.vision_encoder.backbone = get_peft_model(
+            model.vision_encoder.backbone, lora_config
+        )
+        print(f"QLoRA applied (rank={lora_cfg.get('rank', 8)}, 4-bit quantised encoder)")
+
+    elif encoder_mode == 'lora':
+        from peft import get_peft_model, LoraConfig
+
+        for param in model.vision_encoder.parameters():
+            param.requires_grad = False
+
+        lora_cfg = config['model'].get('lora', {})
+        lora_config = LoraConfig(
+            r=lora_cfg.get('rank', 8),
+            lora_alpha=lora_cfg.get('alpha', 16),
+            target_modules=lora_cfg.get('target_modules', ['query', 'value']),
+            lora_dropout=lora_cfg.get('dropout', 0.05),
+        )
+        model.vision_encoder.backbone = get_peft_model(
+            model.vision_encoder.backbone, lora_config
+        )
+        print(f"LoRA applied (rank={lora_cfg.get('rank', 8)})")
+
+    elif encoder_mode == 'frozen':
+        for param in model.vision_encoder.parameters():
+            param.requires_grad = False
+        print("Encoder frozen (no adapters)")
+
     model.to(device)
 
-    print(f"Model: {config['model']['type']}")
+    total_params = sum(p.numel() for p in model.parameters())
     trainable = model.count_parameters() if hasattr(model, 'count_parameters') else sum(p.numel() for p in model.parameters() if p.requires_grad)
-    print(f"Trainable parameters: {trainable:,}")
+    print(f"Model: {config['model']['type']} | encoder_mode: {encoder_mode}")
+    print(f"Total parameters: {total_params:,} | Trainable: {trainable:,} ({100*trainable/total_params:.1f}%)")
 
     optimizer, scheduler = setup_optimizer_and_scheduler(
         model, config, steps_per_epoch=len(train_loader))
@@ -689,19 +924,101 @@ def train(config: dict, resume_path: str = None):
 
 def main():
     """Main entry point"""
-    parser = argparse.ArgumentParser(description='Train OMR models')
-    parser.add_argument('--config', type=str, required=True, help='Path to config file')
+    parser = argparse.ArgumentParser(
+        description='Train OMR models',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Train with a specific encoder (no config file needed):
+  python -m src.train --encoder facebook/deit-small-patch16-224
+
+  # LoRA fine-tuning:
+  python -m src.train --encoder facebook/deit-small-patch16-224 --encoder-mode lora --lora-rank 8
+
+  # Use a YAML config (for distillation, monophonic, etc.):
+  python -m src.train --config configs/distillation.yaml
+
+  # Config + CLI overrides:
+  python -m src.train --config configs/luca_model.yaml --lr 1e-4 --epochs 20
+""",
+    )
+
+    # --- Source of config (one of --config or --encoder required) ---
+    source = parser.add_argument_group('config source (one required)')
+    source.add_argument('--config', type=str, default=None,
+                        help='Path to YAML config file')
+    source.add_argument('--encoder', type=str, default=None,
+                        help='Pretrained encoder model name (e.g. facebook/deit-small-patch16-224)')
+
+    # --- Model options ---
+    model_grp = parser.add_argument_group('model options')
+    model_grp.add_argument('--encoder-mode', type=str, default='full',
+                           choices=['full', 'frozen', 'lora', 'qlora'],
+                           help='Encoder fine-tuning mode (default: full)')
+    model_grp.add_argument('--lora-rank', type=int, default=8, help='LoRA rank (default: 8)')
+    model_grp.add_argument('--lora-alpha', type=int, default=16, help='LoRA alpha (default: 16)')
+    model_grp.add_argument('--d-model', type=int, default=512, help='Decoder hidden dim (default: 512)')
+    model_grp.add_argument('--n-heads', type=int, default=8, help='Attention heads (default: 8)')
+    model_grp.add_argument('--n-decoder-layers', type=int, default=6, help='Decoder layers (default: 6)')
+    model_grp.add_argument('--d-ff', type=int, default=2048, help='Feed-forward dim (default: 2048)')
+    model_grp.add_argument('--max-seq-len', type=int, default=2048, help='Max sequence length (default: 2048)')
+    model_grp.add_argument('--dropout', type=float, default=0.1, help='Dropout rate (default: 0.1)')
+
+    # --- Training options ---
+    train_grp = parser.add_argument_group('training options')
+    train_grp.add_argument('--batch-size', type=int, default=8, help='Batch size (default: 8)')
+    train_grp.add_argument('--grad-accum-steps', type=int, default=4,
+                           help='Gradient accumulation steps (default: 4)')
+    train_grp.add_argument('--epochs', type=int, default=10, help='Training epochs (default: 10)')
+    train_grp.add_argument('--lr', type=float, default=3e-4, help='Learning rate (default: 3e-4)')
+    train_grp.add_argument('--weight-decay', type=float, default=0.01,
+                           help='Weight decay (default: 0.01)')
+    train_grp.add_argument('--early-stop-patience', type=int, default=6,
+                           help='Early stopping patience (default: 6)')
+    train_grp.add_argument('--checkpoint-dir', type=str, default=None,
+                           help='Checkpoint directory (default: auto from encoder name)')
+
+    # --- Data options ---
+    data_grp = parser.add_argument_group('data options')
+    data_grp.add_argument('--dataset', type=str, default='guangyangmusic/PDMX-Synth',
+                          help='Dataset ID (default: guangyangmusic/PDMX-Synth)')
+    data_grp.add_argument('--tokenizer', type=str, default='guangyangmusic/legato',
+                          help='Tokenizer ID (default: guangyangmusic/legato)')
+    data_grp.add_argument('--img-height', type=int, default=224, help='Image height (default: 224)')
+    data_grp.add_argument('--strip-non-pitch', action='store_true',
+                          help='Filter transcriptions to pitch/rhythm/key only')
+
+    # --- Wandb options ---
+    wandb_grp = parser.add_argument_group('wandb options')
+    wandb_grp.add_argument('--wandb-project', type=str, default=None,
+                           help='Wandb project name (enables wandb logging)')
+    wandb_grp.add_argument('--wandb-run-name', type=str, default=None, help='Wandb run name')
+    wandb_grp.add_argument('--wandb-tags', type=str, default=None,
+                           help='Comma-separated wandb tags')
+
+    # --- Other options ---
     parser.add_argument('--resume', type=str, default=None, help='Path to checkpoint to resume from')
     parser.add_argument('--gpu', type=int, default=None, help='GPU device ID to use')
-    parser.add_argument('--stage', type=int, choices=[1, 2], default=None, help='Run only a specific training stage (1 or 2)')
-    parser.add_argument('--stage1-checkpoint', type=str, default=None, help='Path to stage 1 checkpoint for stage 2 training')
+    parser.add_argument('--stage', type=int, choices=[1, 2], default=None,
+                        help='Run only a specific training stage (1 or 2)')
+    parser.add_argument('--stage1-checkpoint', type=str, default=None,
+                        help='Path to stage 1 checkpoint for stage 2 training')
 
     args = parser.parse_args()
+
+    # Validate: need either --config or --encoder
+    if args.config is None and args.encoder is None:
+        parser.error('one of --config or --encoder is required')
 
     if args.gpu is not None:
         os.environ['CUDA_VISIBLE_DEVICES'] = str(args.gpu)
 
-    config = load_config(args.config)
+    # Build config
+    if args.config:
+        config = load_config(args.config)
+        config = apply_cli_overrides(config, args)
+    else:
+        config = build_config_from_args(args)
 
     if args.stage:
         print(f"Running only stage {args.stage}")
