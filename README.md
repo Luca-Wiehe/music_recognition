@@ -1,6 +1,6 @@
 # Optical Music Recognition
 
-This repository is a PyTorch implementation of several optical music recognition techniques. The goal is to take an image of a music score as input and produce a MIDI file as output. Currently, the main implemented architecture is a CRNN. A Transformer architecture will follow soon.
+This repository is a PyTorch implementation of several optical music recognition architectures. The goal is to take an image of a music score as input and produce a MIDI file as output. We want to provide practical guidance for anyone planning to train or run OMR systems, ablating several architecture decisions. In particular, we look at settings with limited compute availability (< 32GB VRAM).  
 
 ## Preview 
 
@@ -67,42 +67,14 @@ The data will be stored in the `/data/datasets/` folder organized as:
 └── ...
 ```
 
-## Implemented Networks
-### CRNN
-The first implemented neural network is a CRNN that I reimplemented from the Camera Primus Paper. It uses the a Convolutional Recurrent Neural Network (CRNN) architecture which is characterized by a set of convolutional layers followed by several BiLSTMs and linear layers. Before each activation, batch normalization is performed to make sure that gradients are in an active regime. 
+### Training
 
-The implementation of this stage is almost completed. However, the training in the original paper had 64,000 epochs which is infeasible in terms of available compute power at this point.
-
-### TrOMR
-The second architecture is a transformer architecture reimplemented from the TrOMR Paper. It uses Transfer Learning with a pretrained Vision Transformer to predict sequences of music symbols.
-
-#### Training
-
-MusicTrOCR can be trained entirely from CLI flags — no config file needed:
-
-```bash
-# Full fine-tuning with DeiT-Small encoder:
-python -m src.train --encoder facebook/deit-small-patch16-224 \
-    --wandb-project music-recognition
-
-# LoRA fine-tuning (rank 8):
-python -m src.train --encoder facebook/deit-small-patch16-224 \
-    --encoder-mode lora --lora-rank 8
-
-# Pitch-only ablation:
-python -m src.train --encoder facebook/deit-small-patch16-224 --strip-non-pitch
-```
-
-For complex setups (distillation, monophonic model), use a YAML config:
-```bash
-python -m src.train --config configs/distillation.yaml
-```
-
-Run `python -m src.train --help` for all available options.
+### Overview
+An OMR system has two core components (analogous to eyes and brain). A **vision encoder** extracts visual features from a score image, and a **decoder** translates those features into a sequence of music symbols. The encoder choice matters because these models are typically pretrained on natural images (ImageNet) and then finetuned on sheet music, and different architectures transfer differently to the structured, horizontal layout of musical notation.
 
 #### Choosing the Vision Encoder
 
-All encoders were benchmarked using the same MusicTrOCR decoder (6-layer Transformer, d_model=512) with full finetuning on the PDMX-Synth dataset for 10 epochs.
+We benchmark seven pretrained encoders under a limited compute budget (<32 GB VRAM), keeping the decoder fixed (6-layer Transformer, d_model=512) and fully finetuning each encoder on the PDMX-Synth dataset for 10 epochs.
 
 | Encoder | Pretrained Model | Encoder Params | Total Params | Best Val Loss |
 |---|---|---|---|---|
@@ -114,37 +86,95 @@ All encoders were benchmarked using the same MusicTrOCR decoder (6-layer Transfo
 | MobileViT-Small | `apple/mobilevit-small` | 6M | 42.2M | 0.4857 |
 | EfficientNet-B0 | `google/efficientnet-b0` | 5M | 41.6M | 0.5119 |
 
+Patch-based vision transformers (DeiT, Swin) consistently outperform CNNs, with DeiT-Small achieving the best loss while being among the smallest encoders.
+
 <details>
 <summary>Reproduction commands</summary>
 
 ```bash
 # DeiT-Small (best)
-python -m src.train --encoder facebook/deit-small-patch16-224 \
-    --wandb-project music-recognition --wandb-run-name backbone-deit-small
+python -m src.train \
+    --encoder facebook/deit-small-patch16-224 \
+    --wandb-project music-recognition \
+    --wandb-run-name backbone-deit-small
 
 # ConvNeXt-Tiny
-python -m src.train --encoder facebook/convnext-tiny-224 \
-    --wandb-project music-recognition --wandb-run-name backbone-convnext-tiny
+python -m src.train \
+    --encoder facebook/convnext-tiny-224 \
+    --wandb-project music-recognition \
+    --wandb-run-name backbone-convnext-tiny
 
 # Swin-Tiny
-python -m src.train --encoder microsoft/swin-tiny-patch4-window7-224 \
-    --wandb-project music-recognition --wandb-run-name backbone-swin-tiny
+python -m src.train \
+    --encoder microsoft/swin-tiny-patch4-window7-224 \
+    --wandb-project music-recognition \
+    --wandb-run-name backbone-swin-tiny
 
 # ViT-Small
-python -m src.train --encoder WinKawaks/vit-small-patch16-224 \
-    --wandb-project music-recognition --wandb-run-name backbone-vit-small
+python -m src.train \
+    --encoder WinKawaks/vit-small-patch16-224 \
+    --wandb-project music-recognition \
+    --wandb-run-name backbone-vit-small
 
 # ResNet-50
-python -m src.train --encoder microsoft/resnet-50 \
-    --wandb-project music-recognition --wandb-run-name backbone-resnet50
+python -m src.train \
+    --encoder microsoft/resnet-50 \
+    --wandb-project music-recognition \
+    --wandb-run-name backbone-resnet50
 
 # MobileViT-Small
-python -m src.train --encoder apple/mobilevit-small \
-    --wandb-project music-recognition --wandb-run-name backbone-mobilevit-small
+python -m src.train \
+    --encoder apple/mobilevit-small \
+    --wandb-project music-recognition \
+    --wandb-run-name backbone-mobilevit-small
 
 # EfficientNet-B0
-python -m src.train --encoder google/efficientnet-b0 \
-    --wandb-project music-recognition --wandb-run-name backbone-efficientnet-b0
+python -m src.train \
+    --encoder google/efficientnet-b0 \
+    --wandb-project music-recognition \
+    --wandb-run-name backbone-efficientnet-b0
+```
+
+</details>
+
+#### Choosing the Decoder
+
+With the encoder fixed to a lightweight CNN (SharedEncoder), we compare four decoder architectures under CTC loss, matching each to ~6.3M decoder parameters (1x) and ~25.2M decoder parameters (4x). All runs use lr=3e-4, AdamW, 3% linear warmup, and 10 epochs on PDMX-Synth.
+
+**1x scale (~6M decoder params)**
+
+| Decoder | Total Params | Decoder Params | Best Val Loss |
+|---|---|---|---|
+| **GRU** | 9.1M | 6.2M | **0.3021** |
+| Transformer | 8.9M | 6.4M | 0.3129 |
+| LSTM | 8.8M | 6.3M | 0.3206 |
+| RNN | 12.1M | 6.3M | 0.3304 |
+
+**4x scale (~25M decoder params)**
+
+| Decoder | Total Params | Decoder Params | Best Val Loss |
+|---|---|---|---|
+| **GRU** | 32.0M | 25.1M | **0.3008** |
+| LSTM | 31.0M | 25.1M | 0.3093 |
+| RNN | 38.2M | 25.2M | 0.3340 |
+| Transformer | 28.6M | 25.1M | 0.4476 |
+
+Scaling the decoder from 6M to 25M parameters does not meaningfully improve results. GRU gains only 0.0013 in val loss, LSTM gains 0.0113, and RNN slightly degrades. The Transformer collapses entirely at 4x — its training loss plateaus at ~0.47 from epoch 1 (vs. 0.39→0.32 at 1x), indicating an optimization failure rather than overfitting (train and val losses are nearly identical). This is likely caused by the fixed lr=3e-4 being too aggressive for the larger Transformer (6 layers, d_model=768). Overall, the lightweight GRU at 6M parameters is the best choice — additional decoder capacity is better spent elsewhere in the pipeline.
+
+<details>
+<summary>Reproduction commands</summary>
+
+```bash
+# 1x scale (~6M decoder params)
+bash launch_decoder_ablation.sh
+
+# 4x scale (~25M decoder params)
+# Edit launch_decoder_scaling.sh to run only 4x, or run directly:
+for decoder in lstm rnn gru transformer; do
+    python train_decoder_ablation.py \
+        --decoder $decoder --scale 4x \
+        --wandb-project music-recognition
+done
 ```
 
 </details>
